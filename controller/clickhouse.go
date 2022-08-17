@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"net/http"
 	"path"
 	"reflect"
 	"strconv"
@@ -12,7 +13,6 @@ import (
 
 	client "github.com/ClickHouse/clickhouse-go"
 	"github.com/gin-gonic/gin"
-	"github.com/housepower/ckman/business"
 	"github.com/housepower/ckman/common"
 	"github.com/housepower/ckman/deploy"
 	_ "github.com/housepower/ckman/docs"
@@ -923,51 +923,86 @@ func (ck *ClickHouseController) RebalanceCluster(c *gin.Context) {
 		return
 	}
 
-	hosts, err := common.GetShardAvaliableHosts(&conf)
-	if err != nil {
-		model.WrapMsg(c, model.REBALANCE_CK_CLUSTER_FAIL, err)
+	if deploy.HasEffectiveTasks(clusterName) {
+		model.WrapMsg(c, model.CLUSTER_NOT_EXIST, fmt.Sprintf("cluster %s has effective tasks, can't do rebalance", clusterName))
 		return
 	}
 
-	rebalancer := &business.CKRebalance{
-		Hosts:      hosts,
-		Port:       conf.Port,
-		User:       conf.User,
-		Password:   conf.Password,
-		DataDir:    conf.Path,
-		OsUser:     conf.SshUser,
-		OsPassword: conf.SshPassword,
-		OsPort:     conf.SshPort,
-		DBTables:   make(map[string][]string),
-		RepTables:  make(map[string]map[string]string),
-	}
+	// if shard == 1, there is no need to rebalance
+	if len(conf.Shards) > 1 {
+		var req model.RebalanceTableReq
+		if c.Request.Body != http.NoBody {
+			if err = model.DecodeRequestBody(c.Request, &req); err != nil {
+				model.WrapMsg(c, model.INVALID_PARAMS, err)
+				return
+			}
+		}
 
-	if err = rebalancer.InitCKConns(); err != nil {
-		log.Logger.Errorf("got error %+v", err)
-		model.WrapMsg(c, model.REBALANCE_CK_CLUSTER_FAIL, err)
-		return
+		err = clickhouse.RebalanceCluster(&conf, req.Keys)
+		if err != nil {
+			model.WrapMsg(c, model.REBALANCE_CK_CLUSTER_FAIL, err)
+			return
+		}
 	}
-
-	if err = rebalancer.GetTables(); err != nil {
-		log.Logger.Errorf("got error %+v", err)
-		model.WrapMsg(c, model.REBALANCE_CK_CLUSTER_FAIL, err)
-		return
-	}
-	if err = rebalancer.GetRepTables(); err != nil {
-		log.Logger.Errorf("got error %+v", err)
-		model.WrapMsg(c, model.REBALANCE_CK_CLUSTER_FAIL, err)
-		return
-	}
-
-	if err = rebalancer.DoRebalance(); err != nil {
-		log.Logger.Errorf("got error %+v", err)
-		model.WrapMsg(c, model.REBALANCE_CK_CLUSTER_FAIL, err)
-		return
-	}
-	log.Logger.Infof("rebalance done")
 
 	model.WrapMsg(c, model.SUCCESS, nil)
 }
+
+// func (ck *ClickHouseController) RebalanceCluster(c *gin.Context) {
+// 	var err error
+// 	clusterName := c.Param(ClickHouseClusterPath)
+
+// 	conf, err := repository.Ps.GetClusterbyName(clusterName)
+// 	if err != nil {
+// 		model.WrapMsg(c, model.CLUSTER_NOT_EXIST, fmt.Sprintf("cluster %s does not exist", clusterName))
+// 		return
+// 	}
+
+// 	hosts, err := common.GetShardAvaliableHosts(&conf)
+// 	if err != nil {
+// 		model.WrapMsg(c, model.REBALANCE_CK_CLUSTER_FAIL, err)
+// 		return
+// 	}
+
+// 	rebalancer := &business.CKRebalance{
+// 		Hosts:      hosts,
+// 		Port:       conf.Port,
+// 		User:       conf.User,
+// 		Password:   conf.Password,
+// 		DataDir:    conf.Path,
+// 		OsUser:     conf.SshUser,
+// 		OsPassword: conf.SshPassword,
+// 		OsPort:     conf.SshPort,
+// 		DBTables:   make(map[string][]string),
+// 		RepTables:  make(map[string]map[string]string),
+// 	}
+
+// 	if err = rebalancer.InitCKConns(); err != nil {
+// 		log.Logger.Errorf("got error %+v", err)
+// 		model.WrapMsg(c, model.REBALANCE_CK_CLUSTER_FAIL, err)
+// 		return
+// 	}
+
+// 	if err = rebalancer.GetTables(); err != nil {
+// 		log.Logger.Errorf("got error %+v", err)
+// 		model.WrapMsg(c, model.REBALANCE_CK_CLUSTER_FAIL, err)
+// 		return
+// 	}
+// 	if err = rebalancer.GetRepTables(); err != nil {
+// 		log.Logger.Errorf("got error %+v", err)
+// 		model.WrapMsg(c, model.REBALANCE_CK_CLUSTER_FAIL, err)
+// 		return
+// 	}
+
+// 	if err = rebalancer.DoRebalance(); err != nil {
+// 		log.Logger.Errorf("got error %+v", err)
+// 		model.WrapMsg(c, model.REBALANCE_CK_CLUSTER_FAIL, err)
+// 		return
+// 	}
+// 	log.Logger.Infof("rebalance done")
+
+// 	model.WrapMsg(c, model.SUCCESS, nil)
+// }
 
 // @Summary Get ClickHouse cluster status
 // @Description Get ClickHouse cluster status
@@ -1616,7 +1651,7 @@ func (ck *ClickHouseController) PurgeTables(c *gin.Context) {
 		model.WrapMsg(c, model.PURGER_TABLES_FAIL, err)
 		return
 	}
-	p := business.NewPurgerRange(chHosts, conf.Port, conf.User, conf.Password, req.Database, req.Begin, req.End)
+	p := clickhouse.NewPurgerRange(chHosts, conf.Port, conf.User, conf.Password, req.Database, req.Begin, req.End)
 	err = p.InitConns()
 	if err != nil {
 		model.WrapMsg(c, model.PURGER_TABLES_FAIL, err)
@@ -1695,7 +1730,7 @@ func (ck *ClickHouseController) ArchiveToHDFS(c *gin.Context) {
 		model.WrapMsg(c, model.ARCHIVE_TO_HDFS_FAIL, err)
 		return
 	}
-	archive := &business.ArchiveHDFS{
+	archive := &clickhouse.ArchiveHDFS{
 		Hosts:       chHosts,
 		Port:        conf.Port,
 		User:        conf.User,

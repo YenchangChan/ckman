@@ -12,12 +12,10 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go"
-	"github.com/housepower/ckman/repository"
-
-	"github.com/housepower/ckman/business"
 	"github.com/housepower/ckman/common"
 	"github.com/housepower/ckman/log"
 	"github.com/housepower/ckman/model"
+	"github.com/housepower/ckman/repository"
 	"github.com/pkg/errors"
 )
 
@@ -575,7 +573,7 @@ func (ck *CkService) QueryInfo(query string) ([][]interface{}, error) {
 }
 
 func (ck *CkService) FetchSchemerFromOtherNode(host, password string) error {
-	names, statements, err := business.GetCreateReplicaObjects(ck.DB, host, model.ClickHouseDefaultUser, password)
+	names, statements, err := GetCreateReplicaObjects(ck.DB, host, model.ClickHouseDefaultUser, password)
 	if err != nil {
 		return err
 	}
@@ -1105,7 +1103,7 @@ func SyncLogicTable(src, dst model.CKManClickHouseConfig) bool {
 		log.Logger.Warnf("connect %s failed", hosts[0])
 		return false
 	}
-	statementsqls, err := business.GetLogicSchema(srcDB, *dst.LogicCluster, dst.Cluster, dst.IsReplica)
+	statementsqls, err := GetLogicSchema(srcDB, *dst.LogicCluster, dst.Cluster, dst.IsReplica)
 	if err != nil {
 		log.Logger.Warnf("get logic schema failed: %v", err)
 		return false
@@ -1141,5 +1139,153 @@ func RestoreReplicaTable(conf *model.CKManClickHouseConfig, host, database, tabl
 	if _, err := db.Exec(query); err != nil {
 		return errors.Wrap(err, host)
 	}
+	return nil
+}
+
+func RebalanceCluster(conf *model.CKManClickHouseConfig, keys []model.RebalanceShardingkey) error {
+	var err error
+	service := NewCkService(conf)
+	if err = service.InitCkService(); err != nil {
+		return err
+	}
+
+	//check the full scale, if table not in the request, rebalance by partition
+	keys, err = paddingKeys(keys, service.DB)
+	if err != nil {
+		return err
+	}
+
+	hosts, err := common.GetShardAvaliableHosts(conf)
+	if err != nil {
+		return err
+	}
+
+	for _, key := range keys {
+		rebalancer := &CKRebalance{
+			Cluster:    conf.Cluster,
+			Hosts:      hosts,
+			Port:       conf.Port,
+			User:       conf.User,
+			Password:   conf.Password,
+			Database:   key.Database,
+			Table:      key.Table,
+			DataDir:    conf.Path,
+			OsUser:     conf.SshUser,
+			OsPassword: conf.SshPassword,
+			OsPort:     conf.SshPort,
+			RepTables:  make(map[string]string),
+		}
+		defer rebalancer.Close()
+
+		if key.ShardingKey != "" {
+			//rebalance by shardingkey
+			log.Logger.Infof("table %s.%s rebalance by shardingkey", key.Database, key.Table)
+			if err = getShardingType(&key, service.DB); err != nil {
+				return err
+			}
+			rebalancer.Shardingkey = key
+			if err = RebalanceByShardingkey(conf, rebalancer); err != nil {
+				return err
+			}
+		} else {
+			//rebalance by partition
+			log.Logger.Infof("table %s.%s rebalance by partition", key.Database, key.Table)
+			err = RebalanceByPartition(conf, rebalancer)
+			if err != nil {
+				return err
+			}
+		}
+
+	}
+
+	return nil
+}
+
+func paddingKeys(keys []model.RebalanceShardingkey, db *sql.DB) ([]model.RebalanceShardingkey, error) {
+	_, dbtables, err := common.GetMergeTreeTables("MergeTree", "", db)
+	if err != nil {
+		return keys, err
+	}
+	//k: database, v:tables
+	for k, v := range dbtables {
+		for _, table := range v {
+			key := model.RebalanceShardingkey{
+				Database: k,
+				Table:    table,
+			}
+			found := false
+			for _, elem := range keys {
+				if key.Database == elem.Database && key.Table == elem.Table {
+					found = true
+					break
+				}
+			}
+			if !found {
+				keys = append(keys, key)
+			}
+		}
+	}
+
+	return keys, nil
+}
+
+func getShardingType(key *model.RebalanceShardingkey, db *sql.DB) error {
+	query := fmt.Sprintf("SELECT type FROM system.columns WHERE (database = '%s') AND (table = '%s') AND (name = '%s') ",
+		key.Database, key.Table, key.ShardingKey)
+	rows, err := db.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var typ string
+		rows.Scan(&typ)
+		key.ShardingType = WhichType(typ)
+	}
+	if key.ShardingType.Nullable || key.ShardingType.Array {
+		return errors.Errorf("invalid shardingKey %s, expect its type be numerical or string", key.ShardingKey)
+	}
+	return nil
+}
+
+func RebalanceByPartition(conf *model.CKManClickHouseConfig, rebalancer *CKRebalance) error {
+	var err error
+	if err = rebalancer.InitCKConns(); err != nil {
+		log.Logger.Errorf("got error %+v", err)
+		return err
+	}
+
+	if err = rebalancer.GetRepTables(); err != nil {
+		log.Logger.Errorf("got error %+v", err)
+		return err
+	}
+
+	if err = rebalancer.DoRebalanceByPart(); err != nil {
+		log.Logger.Errorf("got error %+v", err)
+		return err
+	}
+	log.Logger.Infof("rebalance done")
+	return nil
+}
+
+func RebalanceByShardingkey(conf *model.CKManClickHouseConfig, rebalancer *CKRebalance) error {
+	var err error
+	if err = rebalancer.InitCKConns(); err != nil {
+		log.Logger.Errorf("got error %+v", err)
+		return err
+	}
+
+	if err = rebalancer.CreateTemporaryTable(); err != nil {
+		return err
+	}
+	defer rebalancer.Cleanup()
+	if err = rebalancer.InsertPlan(); err != nil {
+		return err
+	}
+
+	if err = rebalancer.MoveBack(); err != nil {
+		return err
+	}
+
 	return nil
 }
