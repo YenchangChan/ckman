@@ -182,6 +182,9 @@ func ZkMetric(host string, port int, metric string) ([]byte, error) {
 			resp[matches[1]] = matches[2]
 		}
 	}
+	if len(resp) == 0 {
+		return b, nil
+	}
 	return json.Marshal(resp)
 }
 

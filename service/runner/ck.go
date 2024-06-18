@@ -260,7 +260,7 @@ func UpgradeCkCluster(task *model.Task, d deploy.CKDeploy) error {
 		}
 	case model.PolicyFull:
 		err := upgradePackage(task, d, 10)
-		if err != model.CheckTimeOutErr {
+		if err != nil && err != model.CheckTimeOutErr {
 			return err
 		}
 	default:
@@ -345,7 +345,7 @@ func ConfigCkCluster(task *model.Task, d deploy.CKDeploy) error {
 		case model.PolicyFull:
 			deploy.SetNodeStatus(task, model.NodeStatusRestart, model.ALL_NODES_DEFAULT)
 			err := d.Restart()
-			if err != model.CheckTimeOutErr {
+			if err != nil && err != model.CheckTimeOutErr {
 				return err
 			}
 			_ = d.Check(30)

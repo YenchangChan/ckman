@@ -2821,6 +2821,7 @@ func mergeClickhouseConfig(conf *model.CKManClickHouseConfig, force bool) (bool,
 	userconfChanged := !reflect.DeepEqual(cluster.UsersConf, conf.UsersConf)
 	logicChaned := !reflect.DeepEqual(cluster.LogicCluster, conf.LogicCluster)
 	zkChanged := !reflect.DeepEqual(cluster.ZkNodes, conf.ZkNodes)
+	keeperChanged := !reflect.DeepEqual(cluster.KeeperConf, conf.KeeperConf)
 
 	noChangedFn := func() bool {
 		return cluster.Port == conf.Port &&
@@ -2831,7 +2832,7 @@ func mergeClickhouseConfig(conf *model.CKManClickHouseConfig, force bool) (bool,
 			cluster.Password == conf.Password && !storageChanged && !expertChanged &&
 			cluster.PromHost == conf.PromHost && cluster.PromPort == conf.PromPort &&
 			cluster.ZkPort == conf.ZkPort &&
-			!userconfChanged && !logicChaned && !zkChanged
+			!userconfChanged && !logicChaned && !zkChanged && !keeperChanged
 	}
 
 	if !force {
@@ -2954,7 +2955,7 @@ func mergeClickhouseConfig(conf *model.CKManClickHouseConfig, force bool) (bool,
 	}
 
 	// need restart
-	if cluster.Port != conf.Port || storageChanged || expertChanged {
+	if cluster.Port != conf.Port || storageChanged || expertChanged || keeperChanged {
 		restart = true
 	}
 
@@ -2973,6 +2974,7 @@ func mergeClickhouseConfig(conf *model.CKManClickHouseConfig, force bool) (bool,
 	cluster.LogicCluster = conf.LogicCluster
 	cluster.ZkPort = conf.ZkPort
 	cluster.ZkNodes = conf.ZkNodes
+	cluster.KeeperConf = conf.KeeperConf
 	if err = common.DeepCopyByGob(conf, cluster); err != nil {
 		return false, err
 	}
