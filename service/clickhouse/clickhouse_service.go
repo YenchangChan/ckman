@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	client "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/housepower/ckman/common"
 	"github.com/housepower/ckman/log"
@@ -582,31 +583,55 @@ func (ck *CkService) AlterTableTTL(req *model.AlterTblsTTLReq) error {
 		return errors.Errorf("clickhouse service unavailable")
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(len(req.Tables))
+	var lastErr error
 	for _, table := range req.Tables {
-		local, _, err := common.GetTableNames(ck.Conn, table.Database, table.TableName, table.DistName, ck.Config.Cluster, true)
-		if err != nil {
-			return err
-		}
-		if req.TTLType != "" {
-			if req.TTLType == model.TTLTypeModify {
-				if req.TTLExpr != "" {
-					ttl := fmt.Sprintf("ALTER TABLE `%s`.`%s` ON CLUSTER `%s` MODIFY TTL %s %s", table.Database, local, ck.Config.Cluster, req.TTLExpr, common.WithAlterSync(ck.Config.Version))
+		go func(table model.AlterTblTTL) {
+			defer wg.Done()
+			local, _, err := common.GetTableNames(ck.Conn, table.Database, table.TableName, table.DistName, ck.Config.Cluster, true)
+			if err != nil {
+				lastErr = err
+				return
+			}
+			if req.TTLType != "" {
+				if req.TTLType == model.TTLTypeModify {
+					if req.TTLExpr != "" {
+						ttl := fmt.Sprintf("ALTER TABLE `%s`.`%s` ON CLUSTER `%s` MODIFY TTL %s %s", table.Database, local, ck.Config.Cluster, req.TTLExpr, common.WithAlterSync(ck.Config.Version))
+						log.Logger.Debugf(ttl)
+						if err := ck.Conn.Exec(ttl); err != nil {
+							lastErr = err
+							return
+						}
+					}
+				} else if req.TTLType == model.TTLTypeRemove {
+					ttl := fmt.Sprintf("ALTER TABLE `%s`.`%s` ON CLUSTER `%s` REMOVE TTL %s", table.Database, local, ck.Config.Cluster, common.WithAlterSync(ck.Config.Version))
 					log.Logger.Debugf(ttl)
 					if err := ck.Conn.Exec(ttl); err != nil {
-						return errors.Wrap(err, "")
+						var exception *clickhouse.Exception
+						if errors.As(err, &exception); exception != nil {
+							if exception.Code == 341 {
+								var create_table_query string
+								query := fmt.Sprintf("select create_table_query from system.tables where database = '%s' and name = '%s'", table.Database, local)
+								err = ck.Conn.QueryRow(query).Scan(&create_table_query)
+								if err != nil {
+									lastErr = err
+									return
+								}
+								if strings.Contains(create_table_query, req.TTLExpr) || strings.Contains(create_table_query, strings.ReplaceAll(req.TTLExpr, "`", "")) {
+									return
+								}
+							}
+						}
+						lastErr = err
+						return
 					}
 				}
-			} else if req.TTLType == model.TTLTypeRemove {
-				ttl := fmt.Sprintf("ALTER TABLE `%s`.`%s` ON CLUSTER `%s` REMOVE TTL %s", table.Database, local, ck.Config.Cluster, common.WithAlterSync(ck.Config.Version))
-				log.Logger.Debugf(ttl)
-				if err := ck.Conn.Exec(ttl); err != nil {
-					return errors.Wrap(err, "")
-				}
 			}
-		}
+		}(table)
 	}
-
-	return nil
+	wg.Wait()
+	return lastErr
 }
 
 func (ck *CkService) DescTable(params *model.DescCkTableParams) ([]model.CkColumnAttribute, error) {

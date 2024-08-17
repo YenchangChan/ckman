@@ -696,7 +696,7 @@ func (controller *ClickHouseController) DMLOnLogic(c *gin.Context) {
 // @Tags clickhouse
 // @Accept  json
 // @Param clusterName path string true "cluster name" default(test)
-// @Param req body model.AlterCkTableReq true "request body"
+// @Param req body model.AlterTblsTTLReq true "request body"
 // @Success 200 {string} json "{"code":"0000","msg":"success","data":nil}"
 // @Failure 200 {string} json "{"code":"5000","msg":"invalid params","data":""}"
 // @Failure 200 {string} json "{"code":"5804","msg":"数据查询失败","data":""}"
@@ -3034,7 +3034,7 @@ func mergeClickhouseConfig(conf *model.CKManClickHouseConfig, force bool) (bool,
 func genTTLExpress(ttls []model.CkTableTTL, storage *model.Storage) ([]string, error) {
 	var express []string
 	for _, ttl := range ttls {
-		expr := fmt.Sprintf("toDateTime(`%s`) + INTERVAL %d %s ", ttl.TimeCloumn, ttl.Interval, ttl.Unit)
+		expr := fmt.Sprintf("toDateTime(`%s`) + toInterval%s(%d) ", ttl.TimeCloumn, strings.Title(strings.ToLower(ttl.Unit)), ttl.Interval)
 		if ttl.Action == model.TTLActionDelete {
 			expr += ttl.Action
 		} else if ttl.Action == model.TTLActionToVolume {
