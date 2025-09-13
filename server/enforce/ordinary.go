@@ -20,6 +20,9 @@ func OrdinaryPolicies() []Policy {
 		{"/ck/purge_tables/*", POST},
 		{"/ck/archive/*", POST},
 		{"/ck/table/dml/*", POST},
+		{"/data_manage/backup/*", POST},
+		{"/data_manage/restore/*", POST},
+		{"/data_manage/backup/*", DELETE},
 	}
 	return append(OrdinaryPolicies, GuestPolicies()...)
 }
