@@ -266,11 +266,12 @@ func RegistCreateClusterSchema() common.ConfigParams {
 		LabelEN:  "ForceSync",
 		Required: "false",
 	})
-	params.MustRegister(coordination, "AutoForwarding", &common.Parameter{
-		LabelZH:  "AutoForwarding",
-		LabelEN:  "AutoForwarding",
-		Required: "false",
-	})
+	// params.MustRegister(coordination, "AutoForwarding", &common.Parameter{
+	// 	LabelZH:  "AutoForwarding",
+	// 	LabelEN:  "AutoForwarding",
+	// 	Required: "false",
+	// 	Default:  "true",
+	// })
 	params.MustRegister(coordination, "Expert", &common.Parameter{
 		LabelZH:  "专家配置",
 		LabelEN:  "Expert",
@@ -989,11 +990,11 @@ func RegistUpdateConfigSchema() common.ConfigParams {
 		LabelEN:  "ForceSync",
 		Required: "false",
 	})
-	params.MustRegister(coordination, "AutoForwarding", &common.Parameter{
-		LabelZH:  "AutoForwarding",
-		LabelEN:  "AutoForwarding",
-		Required: "false",
-	})
+	// params.MustRegister(coordination, "AutoForwarding", &common.Parameter{
+	// 	LabelZH:  "AutoForwarding",
+	// 	LabelEN:  "AutoForwarding",
+	// 	Required: "false",
+	// })
 	params.MustRegister(coordination, "Expert", &common.Parameter{
 		LabelZH:  "专家配置",
 		LabelEN:  "Expert",

@@ -195,6 +195,8 @@ func marshalSchemaRecursive(params map[string]*Parameter, rt reflect.Type, param
 	}
 	sb.WriteString(`, "type": `)
 	sb.WriteString(nullableString(str_type))
+	sb.WriteString(`, "default": `)
+	sb.WriteString(nullableString(param.Default))
 	if str_type == "string" || str_type == "int" || str_type == "float" {
 		sb.WriteString(`, "input_type": `)
 		if len(param.InputType) == 0 {
@@ -219,8 +221,8 @@ func marshalSchemaRecursive(params map[string]*Parameter, rt reflect.Type, param
 			sb.WriteString(`, "filter": `)
 			sb.WriteString(nullableString(param.Filter))
 		}
-		sb.WriteString(`, "default": `)
-		sb.WriteString(nullableString(param.Default))
+		// sb.WriteString(`, "default": `)
+		// sb.WriteString(nullableString(param.Default))
 		if str_type == "string" {
 			sb.WriteString(`, "regexp": `)
 			sb.WriteString(nullableString(param.Regexp))

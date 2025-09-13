@@ -51,11 +51,12 @@ func coordination_settings(coordination model.Coordination) map[string]interface
 	} else {
 		output["force_sync"] = "false"
 	}
-	if coordination.AutoForwarding {
-		output["auto_forwarding"] = "true"
-	} else {
-		output["auto_forwarding"] = "false"
-	}
+	output["auto_forwarding"] = "true"
+	// if coordination.AutoForwarding {
+	// 	output["auto_forwarding"] = "true"
+	// } else {
+	// 	output["auto_forwarding"] = "false"
+	// }
 	return output
 }
 
