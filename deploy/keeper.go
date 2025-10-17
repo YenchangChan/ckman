@@ -143,6 +143,8 @@ func (d *KeeperDeploy) Install() error {
 	cmds = append(cmds, fmt.Sprintf("rm -rf %s/*", d.Conf.KeeperConf.Path))
 	if d.Conf.NeedSudo {
 		cmds = append(cmds, fmt.Sprintf("chown clickhouse.clickhouse %s -R", d.Conf.KeeperConf.Path))
+		cmds = append(cmds, "systemctl daemon-reload")
+		cmds = append(cmds, "systemctl enable clickhouse-keeper")
 	}
 	var lastError error
 	var wg sync.WaitGroup
