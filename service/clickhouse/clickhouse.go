@@ -17,6 +17,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+var (
+	distEngineReg = regexp.MustCompile(`(Distributed\s*\(\s*'[^']*',\s*')[^']*(')`)
+)
+
 func GetCkClusterConfig(conf *model.CKManClickHouseConfig) (string, error) {
 	var replicas []model.CkReplica
 
@@ -572,6 +576,204 @@ func MaterializedView(conf *model.CKManClickHouseConfig, req model.MaterializedV
 	}
 
 	return statement, nil
+}
+
+func MigrateTable(conf *model.CKManClickHouseConfig, req model.MigrateTableReq) (model.MigrateTableRsp, error) {
+	var resp model.MigrateTableRsp
+	service := NewCkService(conf)
+	if err := service.InitCkService(); err != nil {
+		return resp, err
+	}
+
+	query := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` ON CLUSTER `%s`", req.TargetDb, conf.Cluster)
+	log.Logger.Debugf(query)
+	if err := service.Conn.Exec(query); err != nil {
+		return resp, err
+	}
+
+	// 获取所有MergeTree表
+	tables := req.IncludeTables
+	if len(tables) == 0 {
+		_, allTbls, err := common.GetMergeTreeTables("MergeTree", req.SourceDb, service.Conn)
+		if err != nil {
+			return resp, err
+		}
+		tables = allTbls[req.SourceDb]
+	}
+
+	// 排除指定表
+	var realTables []string
+	if len(req.ExcludeTables) > 0 {
+		for _, tbl := range tables {
+			if !common.ArraySearch(tbl, req.ExcludeTables) {
+				realTables = append(realTables, tbl)
+			}
+		}
+	} else {
+		realTables = tables
+	}
+
+	//分布式表，逻辑表
+	var allTables []string
+	allTables = append(allTables, realTables...)
+	for _, tbl := range realTables {
+		distTbls, err := getDistTbls(service.Conn, req.SourceDb, tbl)
+		if err != nil {
+			return resp, err
+		}
+		allTables = append(allTables, distTbls...)
+	}
+
+	//关联的物化视图
+	mvTables, err := GetVmStatus(conf)
+	if err != nil {
+		return resp, err
+	}
+	for k, mv := range mvTables {
+		db := strings.Split(k, ".")[0]
+		if db != req.SourceDb {
+			continue
+		}
+		mvTbl := strings.Split(k, ".")[1]
+		sourceTable := strings.Split(mv.SourceTable, ".")[1]
+		if common.ArraySearch(sourceTable, realTables) {
+			allTables = append(allTables, mvTbl)
+		}
+	}
+
+	type TcreateSql struct {
+		Sql string
+		Tbl string
+	}
+	var createSqls []TcreateSql
+	var successList []model.MigrateDetail
+	var failedList []model.MigrateDetail
+	var summary model.Summary
+	// 获取建表语句
+	for _, tbl := range allTables {
+		var createSql string
+		createSql, err = genCreateSql(service.Conn, req.SourceDb, tbl, req.TargetDb, conf.Cluster)
+		if err != nil {
+			failedList = append(failedList, model.MigrateDetail{
+				Error:     err.Error(),
+				TableName: tbl,
+			})
+			summary.Fail++
+		}
+		createSqls = append(createSqls, TcreateSql{
+			Sql: createSql,
+			Tbl: tbl,
+		})
+		summary.Total++
+	}
+
+	//执行建表语句
+	if req.Dryrun {
+		for _, cs := range createSqls {
+			successList = append(successList, model.MigrateDetail{
+				TableName: cs.Tbl,
+				CreateSql: cs.Sql,
+			})
+			summary.Success++
+		}
+	} else {
+		for _, cs := range createSqls {
+			if err = service.Conn.Exec(cs.Sql); err != nil {
+				failedList = append(failedList, model.MigrateDetail{
+					Error:     err.Error(),
+					TableName: cs.Tbl,
+					CreateSql: cs.Sql,
+				})
+				summary.Fail++
+			}
+			successList = append(successList, model.MigrateDetail{
+				TableName: cs.Tbl,
+				//CreateSql: cs.Sql,
+			})
+		}
+
+		//迁移数据
+		if !req.SchemaOnly {
+			for _, tbl := range realTables {
+				query := fmt.Sprintf("InSERT INTO `%s`.`%s` SELECT * FROM `%s`.`%s` SETTINGS max_execution_time=0,max_insert_thread=32", req.TargetDb, tbl, req.SourceDb, tbl)
+				log.Logger.Debugf("[%s] %s", tbl, query)
+				hosts, err := common.GetShardAvaliableHosts(conf)
+				if err != nil {
+					return resp, err
+				}
+				wg := sync.WaitGroup{}
+				wg.Add(len(hosts))
+				for _, host := range hosts {
+					go func(host string) {
+						defer wg.Done()
+						c := common.GetConnection(host)
+						if c == nil {
+							return
+						}
+						if err = c.Exec(query); err != nil {
+							failedList = append(failedList, model.MigrateDetail{
+								Error:     err.Error(),
+								TableName: tbl,
+							})
+							summary.Fail++
+						}
+					}(host)
+				}
+				wg.Wait()
+			}
+		}
+	}
+
+	resp.Summary = summary
+	resp.SuccessList = successList
+	resp.FailedList = failedList
+
+	return resp, nil
+}
+
+func genCreateSql(conn *common.Conn, database, table, target, cluster string) (string, error) {
+	query := fmt.Sprintf(`SELECT replaceRegexpAll(replaceRegexpOne(create_table_query, 'CREATE TABLE( IF NOT EXISTS)?\\s+\\w+\\.\\w+', 'CREATE TABLE IF NOT EXISTS %s.%s ON CLUSTER %s'), '/clickhouse/tables/\\{cluster\\}/%s/', '/clickhouse/tables/{cluster}/%s/') AS create_sql
+FROM system.tables
+WHERE (database = '%s') AND (table = '%s')`,
+		target, table, cluster, database, target, database, table)
+	log.Logger.Debugf("[genCreateSql]query:%s", query)
+	var createSql string
+	if err := conn.QueryRow(query).Scan(&createSql); err != nil {
+		return "", err
+	}
+	if strings.Contains(createSql, "Distributed") {
+		createSql = strings.ReplaceAll(createSql,
+			fmt.Sprintf("Distributed('%s', '%s'", cluster, database),
+			fmt.Sprintf("Distributed('%s', '%s'", cluster, target))
+	}
+	if strings.Contains(createSql, "MATERIALIZED VIEW") {
+		createSql = strings.ReplaceAll(createSql, fmt.Sprintf("%s.", database), fmt.Sprintf("%s.", target))
+		createSql = strings.ReplaceAll(createSql, "MATERIALIZED VIEW", "MATERIALIZED VIEW IF NOT EXISTS")
+	}
+	createSql = distEngineReg.ReplaceAllString(createSql, fmt.Sprintf("${1}%s${2}", target))
+	return createSql, nil
+}
+
+func getDistTbls(conn *common.Conn, database, table string) (distTbls []string, err error) {
+	query := fmt.Sprintf(`SELECT name, (extractAllGroups(engine_full, '(Distributed\\(\')(.*)\',\\s+\'(.*)\',\\s+\'(.*)\'(.*)')[1])[2] AS cluster
+	 FROM system.tables WHERE engine='Distributed' AND database='%s' AND match(engine_full, 'Distributed\(\'.*\', \'%s\', \'%s\'.*\)')`,
+		database, database, table)
+	log.Logger.Infof("executing sql=> %s", query)
+	var rows *common.Rows
+	if rows, err = conn.Query(query); err != nil {
+		err = errors.Wrapf(err, "")
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, cluster string
+		if err = rows.Scan(&name, &cluster); err != nil {
+			err = errors.Wrapf(err, "")
+			return
+		}
+		distTbls = append(distTbls, name)
+	}
+	return
 }
 
 func GetVmStatus(conf *model.CKManClickHouseConfig) (map[string]*model.CkVmStatus, error) {

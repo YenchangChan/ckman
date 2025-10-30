@@ -335,3 +335,30 @@ type BackgroundPoolRsp struct {
 	Host string                    `json:"host"`
 	Pool map[string]BackgroundPool `json:"background_pool"`
 }
+
+type MigrateTableReq struct {
+	SourceDb      string   `json:"source_db"`
+	TargetDb      string   `json:"target_db"`
+	IncludeTables []string `json:"include_tables"`
+	ExcludeTables []string `json:"exclude_tables"`
+	SchemaOnly    bool     `json:"schema_only"`
+	Dryrun        bool     `json:"dryrun"`
+}
+
+type MigrateDetail struct {
+	TableName string
+	CreateSql string
+	Error     string
+}
+
+type Summary struct {
+	Success int
+	Fail    int
+	Total   int
+}
+
+type MigrateTableRsp struct {
+	SuccessList []MigrateDetail
+	FailedList  []MigrateDetail
+	Summary     Summary
+}

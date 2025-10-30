@@ -3199,3 +3199,36 @@ func genTTLExpress(ttls []model.CkTableTTL, storage *model.Storage) ([]string, e
 	}
 	return express, nil
 }
+
+func (controller *ClickHouseController) MigrateTable(c *gin.Context) {
+	clusterName := c.Param(ClickHouseClusterPath)
+
+	conf, err := repository.Ps.GetClusterbyName(clusterName)
+	if err != nil {
+		controller.wrapfunc(c, model.E_RECORD_NOT_FOUND, fmt.Sprintf("cluster %s does not exist", clusterName))
+		return
+	}
+
+	var req model.MigrateTableReq
+	if err := model.DecodeRequestBody(c.Request, &req); err != nil {
+		controller.wrapfunc(c, model.E_INVALID_PARAMS, err)
+		return
+	}
+
+	if req.SourceDb == "" {
+		controller.wrapfunc(c, model.E_INVALID_PARAMS, "source db can't be empty")
+		return
+	}
+
+	if req.TargetDb == "" {
+		controller.wrapfunc(c, model.E_INVALID_PARAMS, "target db can't be empty")
+		return
+	}
+
+	resp, err := clickhouse.MigrateTable(&conf, req)
+	if err != nil {
+		controller.wrapfunc(c, model.E_TBL_ALTER_FAILED, err)
+		return
+	}
+	controller.wrapfunc(c, model.E_SUCCESS, resp)
+}
