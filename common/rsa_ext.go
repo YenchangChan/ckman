@@ -3,6 +3,7 @@ package common
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"io"
 	"math/big"
 
@@ -46,7 +47,7 @@ func pubKeyIO(pub *rsa.PublicKey, in io.Reader, out io.Writer, isEncrytp bool) (
 			b = buf
 		}
 		if isEncrytp {
-			b, err = rsa.EncryptPKCS1v15(rand.Reader, pub, b)
+			b, err = rsa.EncryptOAEP(sha256.New(), rand.Reader, pub, b, nil)
 		} else {
 			b, err = pubKeyDecrypt(pub, b)
 		}
@@ -83,7 +84,7 @@ func priKeyIO(pri *rsa.PrivateKey, r io.Reader, w io.Writer, isEncrytp bool) (er
 		if isEncrytp {
 			b, err = priKeyEncrypt(rand.Reader, pri, b)
 		} else {
-			b, err = rsa.DecryptPKCS1v15(rand.Reader, pri, b)
+			b, err = rsa.DecryptOAEP(sha256.New(), rand.Reader, pri, b, nil)
 		}
 		if err != nil {
 			return errors.Wrap(err, "")
