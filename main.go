@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -151,7 +150,7 @@ func handleSignal(ch chan os.Signal) {
 		_ = termHandler()
 	case syscall.SIGHUP:
 		_ = termHandler()
-		_ = reloadHandler()
+		//_ = reloadHandler()
 	}
 	signal.Stop(ch)
 }
@@ -168,17 +167,17 @@ func termHandler() error {
 	return nil
 }
 
-func reloadHandler() error {
-	env := os.Environ()
-	mark := fmt.Sprintf("%s=%s", MARK_NAME, MARK_VALUE)
-	env = append(env, mark)
+// func reloadHandler() error {
+// 	env := os.Environ()
+// 	mark := fmt.Sprintf("%s=%s", MARK_NAME, MARK_VALUE)
+// 	env = append(env, mark)
 
-	cmd := exec.Command(os.Args[0], os.Args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = env
-	return cmd.Start()
-}
+// 	cmd := exec.Command(os.Args[0], os.Args[1:]...)
+// 	cmd.Stdout = os.Stdout
+// 	cmd.Stderr = os.Stderr
+// 	cmd.Env = env
+// 	return cmd.Start()
+// }
 
 var VersionCmd = &cobra.Command{
 	Use:   "version",
