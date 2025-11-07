@@ -748,7 +748,10 @@ WHERE (database = '%s') AND (table = '%s')`,
 	}
 	if strings.Contains(createSql, "MATERIALIZED VIEW") {
 		createSql = strings.ReplaceAll(createSql, fmt.Sprintf("%s.", database), fmt.Sprintf("%s.", target))
-		createSql = strings.ReplaceAll(createSql, "MATERIALIZED VIEW", "MATERIALIZED VIEW IF NOT EXISTS")
+		if !strings.Contains(createSql, "MATERIALIZED VIEW IF NOT EXISTS") {
+			createSql = strings.ReplaceAll(createSql, "MATERIALIZED VIEW", "MATERIALIZED VIEW IF NOT EXISTS")
+		}
+		createSql = strings.ReplaceAll(createSql, fmt.Sprintf("CREATE MATERIALIZED VIEW IF NOT EXISTS %s.%s ", target, table), fmt.Sprintf("CREATE MATERIALIZED VIEW IF NOT EXISTS %s.%s ON CLUSTER %s ", target, table, cluster))
 	}
 	createSql = distEngineReg.ReplaceAllString(createSql, fmt.Sprintf("${1}%s${2}", target))
 	return createSql, nil
