@@ -660,15 +660,19 @@ func (controller *ClickHouseController) DMLOnLogic(c *gin.Context) {
 		return
 	}
 
-	if cluster.LogicCluster == nil {
-		controller.wrapfunc(c, model.E_INVALID_PARAMS, fmt.Sprintf("cluster %s not belong any logic cluster", clusterName))
-		return
-	}
-	logics, err := repository.Ps.GetLogicClusterbyName(*cluster.LogicCluster)
-
-	if err != nil {
-		controller.wrapfunc(c, model.E_RECORD_NOT_FOUND, err)
-		return
+	var logics []string
+	if cluster.LogicCluster == nil || *cluster.LogicCluster == "" {
+		logics = append(logics, clusterName)
+	} else {
+		logics, err = repository.Ps.GetLogicClusterbyName(*cluster.LogicCluster)
+		if err != nil {
+			if errors.Is(err, repository.ErrRecordNotFound) {
+				logics = append(logics, clusterName)
+			} else {
+				controller.wrapfunc(c, model.E_RECORD_NOT_FOUND, err)
+				return
+			}
+		}
 	}
 
 	if req.Manipulation != model.DML_DELETE && req.Manipulation != model.DML_UPDATE {
