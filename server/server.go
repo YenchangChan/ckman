@@ -29,6 +29,7 @@ import (
 	"github.com/housepower/ckman/router"
 	"github.com/housepower/ckman/server/enforce"
 	"github.com/housepower/ckman/service/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/swaggo/gin-swagger/swaggerFiles"
 )
@@ -87,6 +88,12 @@ func (server *ApiServer) Start() error {
 	}
 	// http://127.0.0.1:8808/swagger/index.html
 	r.GET("/swagger/*any", ginSwagger.DisablingWrapHandler(swaggerFiles.Handler, ENV_CKMAN_SWAGGER))
+
+	if server.config.Server.Metric {
+		r.GET(server.config.Server.MetricPath, func(c *gin.Context) {
+			promhttp.Handler().ServeHTTP(c.Writer, c.Request)
+		})
+	}
 
 	// http://127.0.0.1:8808/debug/pprof/
 	if server.config.Server.Pprof {

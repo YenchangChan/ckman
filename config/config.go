@@ -69,6 +69,8 @@ type CKManServerConfig struct {
 	PersistentPolicy string `yaml:"persistent_policy" json:"persistent_policy"`
 	TaskInterval     int    `yaml:"task_interval" json:"task_interval"`
 	PkgPath          string `yaml:"pkg_path" json:"pkg_path"`
+	Metric           bool   `yaml:"metric" json:"metric"`
+	MetricPath       string `yaml:"metric_path" json:"metric_path"`
 }
 
 type CKManLogConfig struct {
@@ -105,6 +107,8 @@ func fillDefault(c *CKManConfig) {
 	c.Server.KeyFile = path.Join(GetWorkDirectory(), "conf", "server.key")
 	c.Server.PkgPath = GetWorkDirectory()
 	c.Server.TaskInterval = 5
+	c.Server.Metric = true
+	c.Server.MetricPath = "/metrics"
 	c.Cron.Enabled = true
 	c.ClickHouse.MaxOpenConns = 10
 	c.ClickHouse.MaxIdleConns = 2

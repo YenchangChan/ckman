@@ -11,6 +11,7 @@ import (
 	"github.com/housepower/ckman/model"
 	"github.com/housepower/ckman/repository"
 	"github.com/housepower/ckman/service/clickhouse"
+	"github.com/housepower/ckman/statistics"
 	"github.com/pkg/errors"
 )
 
@@ -91,6 +92,7 @@ AND (cluster != '%s')`, cluster)
 				if err1 == nil && err2 == nil {
 					clickhouse.SyncLogicTable(conf, con)
 				}
+				statistics.SyncDistSchemaTotal.WithLabelValues(k).Inc()
 			}
 		}
 	}
@@ -174,6 +176,7 @@ func syncLogicbyTable(clusters []string, database, localTable string) error {
 			if err = alterTable(ckService.Conn, database, common.ClickHouseDistTableOnLogicPrefix+localTable, onCluster, columnsExpr, ckService.Config.Version); err != nil {
 				return err
 			}
+			statistics.SyncLogicSchema.WithLabelValues(cluster).Inc()
 
 		}
 	}
