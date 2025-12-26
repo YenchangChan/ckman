@@ -1320,6 +1320,28 @@ paths:
       summary: 获取分区信息
       tags:
       - clickhouse
+  /api/v2/ck/partitions/{clusterName}:
+    delete:
+      consumes:
+      - application/json
+      description: 根据partition_id删除指定分区
+      parameters:
+      - default: test
+        description: cluster name
+        in: path
+        name: clusterName
+        required: true
+        type: string
+      responses:
+        "200":
+          description: '{"code":"0000","msg":"ok","data":""}'
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: 根据partition_id删除指定分区
+      tags:
+      - clickhouse
   /api/v2/ck/ping/{clusterName}:
     post:
       consumes:

@@ -2443,6 +2443,49 @@ func (controller *ClickHouseController) PurgeTables(c *gin.Context) {
 	controller.wrapfunc(c, model.E_SUCCESS, nil)
 }
 
+// @Summary 根据partition_id删除指定分区
+// @Description 根据partition_id删除指定分区
+// @version 1.0
+// @Security ApiKeyAuth
+// @Tags clickhouse
+// @Accept  json
+// @Param clusterName path string true "cluster name" default(test)
+// @Failure 200 {string} json "{"code":"5000","msg":"invalid params","data":""}"
+// @Failure 200 {string} json "{"code":"5110","msg":"clickhouse连接失败","data":""}"
+// @Failure 200 {string} json "{"code":"5800","msg":"集群不存在","data":""}"
+// @Failure 200 {string} json "{"code":"5803","msg":"数据删除失败","data":""}"
+// @Success 200 {string} json "{"code":"0000","msg":"ok","data":""}"
+// @Router /api/v2/ck/partitions/{clusterName} [delete]
+func (controller *ClickHouseController) DropPartitions(c *gin.Context) {
+	clusterName := c.Param(ClickHouseClusterPath)
+	database := c.Query("database")
+	table := c.Query("table")
+	partitionId := c.Query("partition_id")
+
+	if database == "" || table == "" || partitionId == "" {
+		controller.wrapfunc(c, model.E_INVALID_PARAMS, errors.Errorf("invalid params"))
+		return
+	}
+
+	conf, err := repository.Ps.GetClusterbyName(clusterName)
+	if err != nil {
+		controller.wrapfunc(c, model.E_RECORD_NOT_FOUND, fmt.Sprintf("cluster %s does not exist", clusterName))
+		return
+	}
+
+	if len(conf.Hosts) == 0 {
+		controller.wrapfunc(c, model.E_CH_CONNECT_FAILED, errors.Errorf("can't find any host"))
+		return
+	}
+
+	if err := clickhouse.DropPartition(&conf, database, table, partitionId); err != nil {
+		controller.wrapfunc(c, model.E_DATA_DELETE_FAILED, err)
+		return
+	}
+
+	controller.wrapfunc(c, model.E_SUCCESS, nil)
+}
+
 // @Summary 获取分区信息
 // @Description 获取分区信息
 // @version 1.0

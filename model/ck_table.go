@@ -241,6 +241,7 @@ type PartitionInfo struct {
 	MinTime      time.Time `json:"min_time"`
 	MaxTime      time.Time `json:"max_time"`
 	DiskName     string    `json:"disk_name"`
+	PartitionId  string    `json:"partition_id"`
 }
 
 type CkTableCost struct {

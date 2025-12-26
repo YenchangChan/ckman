@@ -876,6 +876,27 @@ func getPoolMetric(service *CkService, name string) (int64, int64, float64) {
 	return task, size, usage
 }
 
+func DropPartition(conf *model.CKManClickHouseConfig, database, table, partitionId string) error {
+	chNodes, err := common.GetShardAvaliableHosts(conf)
+	if err != nil {
+		return err
+	}
+
+	query := fmt.Sprintf("ALTER TABLE `%s`.`%s` DROP PARTITION ID '%s'", database, table, partitionId)
+	for _, chNode := range chNodes {
+		conn := common.GetConnection(chNode)
+		if conn == nil {
+			log.Logger.Errorf("connect to %s failed", chNode)
+			continue
+		}
+		err = conn.Exec(query)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func GetPartitions(conf *model.CKManClickHouseConfig, table string) (map[string]model.PartitionInfo, error) {
 	partInfo := make(map[string]model.PartitionInfo)
 
@@ -888,7 +909,7 @@ func GetPartitions(conf *model.CKManClickHouseConfig, table string) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	query := fmt.Sprintf(`SELECT
+	query := fmt.Sprintf(`SELECT 
     partition,
 	count(name),
     sum(rows),
@@ -896,12 +917,14 @@ func GetPartitions(conf *model.CKManClickHouseConfig, table string) (map[string]
     sum(data_uncompressed_bytes),
     min(min_time),
     max(max_time),
-    disk_name
+    disk_name,
+	partition_id
 FROM cluster('%s', system.parts)
 WHERE (database = '%s') AND (table = '%s') AND (active = 1)
 GROUP BY
     partition,
-    disk_name
+    disk_name,
+	partition_id
 ORDER BY partition ASC`, conf.Cluster, dabatase, tableName)
 	log.Logger.Infof("query: %s", query)
 	value, err := service.QueryInfo(query)
@@ -920,6 +943,7 @@ ORDER BY partition ASC`, conf.Cluster, dabatase, tableName)
 			MinTime:      value[i][5].(time.Time),
 			MaxTime:      value[i][6].(time.Time),
 			DiskName:     value[i][7].(string),
+			PartitionId:  value[i][8].(string),
 		}
 		partInfo[partitionId] = part
 	}
