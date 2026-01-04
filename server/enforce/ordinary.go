@@ -23,6 +23,8 @@ func OrdinaryPolicies() []Policy {
 		{"/data_manage/backup/*", POST},
 		{"/data_manage/restore/*", POST},
 		{"/data_manage/backup/*", DELETE},
+		{"/ck/partition/*", DELETE},
+		{"/ck/table/migrate/*", POST},
 	}
 	return append(OrdinaryPolicies, GuestPolicies()...)
 }
