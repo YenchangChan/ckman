@@ -351,7 +351,7 @@ func (controller *ClickHouseController) CreateTable(c *gin.Context) {
 
 	if len(req.Indexes) > 0 {
 		for _, index := range req.Indexes {
-			idx := fmt.Sprintf("INDEX %s %s TYPE %s GRANULARITY %d", index.Name, index.Field, index.Type, index.Granularity)
+			idx := fmt.Sprintf("INDEX %s `%s` TYPE %s GRANULARITY %d", index.Name, index.Field, index.Type, index.Granularity)
 			params.IndexExpr += "," + idx
 		}
 	}
