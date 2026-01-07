@@ -129,6 +129,7 @@ func InitRouterV1(groupV1 *gin.RouterGroup, config *config.CKManConfig, signal c
 	groupV1.POST(fmt.Sprintf("/ck/purge_tables/:%s", controller.ClickHouseClusterPath), ckController.PurgeTables)
 	groupV1.DELETE(fmt.Sprintf("/ck/partition/:%s", controller.ClickHouseClusterPath), ckController.DropPartitions)
 	groupV1.GET(fmt.Sprintf("/ck/partition/:%s", controller.ClickHouseClusterPath), ckController.GetPartitions)
+	groupV1.POST(fmt.Sprintf("/ck/partition/:%s", controller.ClickHouseClusterPath), ckController.GetMultiPartitions)
 	groupV1.POST(fmt.Sprintf("/ck/archive/:%s", controller.ClickHouseClusterPath), ckController.ArchiveTable)
 	groupV1.GET(fmt.Sprintf("/ck/config/:%s", controller.ClickHouseClusterPath), ckController.GetConfig)
 	groupV1.POST(fmt.Sprintf("/ck/config/:%s", controller.ClickHouseClusterPath), ckController.ClusterSetting)

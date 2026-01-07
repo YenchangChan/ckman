@@ -2455,7 +2455,7 @@ func (controller *ClickHouseController) PurgeTables(c *gin.Context) {
 // @Failure 200 {string} json "{"code":"5800","msg":"集群不存在","data":""}"
 // @Failure 200 {string} json "{"code":"5803","msg":"数据删除失败","data":""}"
 // @Success 200 {string} json "{"code":"0000","msg":"ok","data":""}"
-// @Router /api/v2/ck/partitions/{clusterName} [delete]
+// @Router /api/v2/ck/partition/{clusterName} [delete]
 func (controller *ClickHouseController) DropPartitions(c *gin.Context) {
 	clusterName := c.Param(ClickHouseClusterPath)
 	database := c.Query("database")
@@ -2510,12 +2510,55 @@ func (controller *ClickHouseController) GetPartitions(c *gin.Context) {
 		controller.wrapfunc(c, model.E_RECORD_NOT_FOUND, fmt.Sprintf("cluster %s does not exist", clusterName))
 		return
 	}
-	partInfo, err := clickhouse.GetPartitions(&conf, table)
+	database, tableName, ok := strings.Cut(table, ".")
+	if !ok {
+		controller.wrapfunc(c, model.E_INVALID_PARAMS, "table must be in format database.table")
+		return
+	}
+	partInfo, err := clickhouse.GetPartitions(&conf, database, tableName, 0)
 	if err != nil {
 		controller.wrapfunc(c, model.E_DATA_SELECT_FAILED, err)
 		return
 	}
 	controller.wrapfunc(c, model.E_SUCCESS, partInfo)
+}
+
+// @Summary 获取分区信息
+// @Description 获取分区信息
+// @version 1.0
+// @Security ApiKeyAuth
+// @Tags clickhouse
+// @Accept  json
+// @Param clusterName path string true "cluster name" default(test)
+// @Failure 200 {string} json "{"code":"5800","msg":"集群不存在","data":""}"
+// @Failure 200 {string} json "{"code":"5804","msg":"数据查询失败","data":""}"
+// @Success 200 {string} json "{"code":"0000","msg":"ok","data":""}"
+// @Router /api/v2/ck/partition/{clusterName} [post]
+func (controller *ClickHouseController) GetMultiPartitions(c *gin.Context) {
+	clusterName := c.Param(ClickHouseClusterPath)
+
+	var req model.GetPartitionsReq
+	if err := model.DecodeRequestBody(c.Request, &req); err != nil {
+		controller.wrapfunc(c, model.E_INVALID_PARAMS, err)
+		return
+	}
+
+	conf, err := repository.Ps.GetClusterbyName(clusterName)
+	if err != nil {
+		controller.wrapfunc(c, model.E_RECORD_NOT_FOUND, fmt.Sprintf("cluster %s does not exist", clusterName))
+		return
+	}
+	resp := make(map[string]map[string]model.PartitionInfo)
+	for _, table := range req.Tables {
+		partInfo, err := clickhouse.GetPartitions(&conf, req.Database, table, req.Limit)
+		if err != nil {
+			controller.wrapfunc(c, model.E_DATA_SELECT_FAILED, err)
+			return
+		}
+		resp[table] = partInfo
+	}
+
+	controller.wrapfunc(c, model.E_SUCCESS, resp)
 }
 
 // @Summary 备份表

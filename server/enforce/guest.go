@@ -14,6 +14,7 @@ func GuestPolicies() []Policy {
 		{"/ck/table_schema/*", GET},
 		{"/ck/get/*", GET},
 		{"/ck/partition/*", GET},
+		{"/ck/partition/*", POST},
 		{"/ck/table_metric/*", GET},
 		{"/ck/table_merges/*", GET},
 		{"/ck/open_sessions/*", GET},

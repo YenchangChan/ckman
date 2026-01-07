@@ -897,17 +897,17 @@ func DropPartition(conf *model.CKManClickHouseConfig, database, table, partition
 	return nil
 }
 
-func GetPartitions(conf *model.CKManClickHouseConfig, table string) (map[string]model.PartitionInfo, error) {
+func GetPartitions(conf *model.CKManClickHouseConfig, database, tableName string, limit int) (map[string]model.PartitionInfo, error) {
 	partInfo := make(map[string]model.PartitionInfo)
-
-	dbTbl := strings.SplitN(table, ".", 2)
-	dabatase := dbTbl[0]
-	tableName := dbTbl[1]
 
 	service := NewCkService(conf)
 	err := service.InitCkService()
 	if err != nil {
 		return nil, err
+	}
+	var limitN string
+	if limit > 0 {
+		limitN = fmt.Sprintf("LIMIT %d", limit)
 	}
 	query := fmt.Sprintf(`SELECT 
     partition,
@@ -925,7 +925,7 @@ GROUP BY
     partition,
     disk_name,
 	partition_id
-ORDER BY partition ASC`, conf.Cluster, dabatase, tableName)
+ORDER BY partition DESC %s`, conf.Cluster, database, tableName, limitN)
 	log.Logger.Infof("query: %s", query)
 	value, err := service.QueryInfo(query)
 	if err != nil {
@@ -934,7 +934,7 @@ ORDER BY partition ASC`, conf.Cluster, dabatase, tableName)
 	for i := 1; i < len(value); i++ {
 		partitionId := value[i][0].(string)
 		part := model.PartitionInfo{
-			Database:     dabatase,
+			Database:     database,
 			Table:        tableName,
 			Parts:        value[i][1].(uint64),
 			Rows:         value[i][2].(uint64),

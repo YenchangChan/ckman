@@ -231,6 +231,12 @@ type CKTableMerges struct {
 	Algorithm       string    `json:"merge_algorithm"`
 }
 
+type GetPartitionsReq struct {
+	Database string
+	Tables   []string
+	Limit    int
+}
+
 type PartitionInfo struct {
 	Database     string    `json:"database"`
 	Table        string    `json:"table"`
