@@ -8,8 +8,10 @@ import (
 	"github.com/hjson/hjson-go/v4"
 	"github.com/housepower/ckman/log"
 	"github.com/housepower/ckman/repository"
+	_ "github.com/housepower/ckman/repository/dm8"
 	_ "github.com/housepower/ckman/repository/local"
 	_ "github.com/housepower/ckman/repository/mysql"
+	_ "github.com/housepower/ckman/repository/postgres"
 	"github.com/pkg/errors"
 )
 
