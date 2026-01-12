@@ -82,6 +82,8 @@ type Backup struct {
 	Clean        bool          `json:"clean"`       // 备份成功后是否删除本地数据
 	Operation    string        `json:"operation"`   // backup, restore
 	TargetType   string        `json:"target_type"` // local, s3, hdfs
+	Instance     string        `json:"instance"`
+	Checksum     bool          `json:"checksum"`
 	Local        TargetLocal
 	S3           TargetS3
 	Status       string    `json:"status"`
@@ -93,6 +95,7 @@ type Backup struct {
 type BackupRequest struct {
 	ScheduleType string      `json:"schedule_type"`              //备份类型： 立即备份，定时备份
 	Crontab      string      `json:"crontab"`                    //定时备份的cron表达式
+	Instance     string      `json:"instance"`                   //ckman实例名称， 定时备份选择哪个ckman进行备份
 	Database     string      `json:"database"`                   //数据库名称
 	Tables       []string    `json:"tables"`                     //表名称
 	BackupType   string      `json:"backup_style"`               //备份类型： 全量备份，增量备份
@@ -104,6 +107,7 @@ type BackupRequest struct {
 	S3           TargetS3    `json:"s3"`                         //S3配置
 	Compression  string      `json:"Compression" example:"gzip"` //压缩类型： 不压缩，gzip/gz, brotli/br, xz/LZMA, zstd/zst
 	Clean        bool        `json:"clean"`                      //是否清理本地数据
+	Checksum     bool        `json:"checksum"`                   //是否进行md5校验
 }
 
 type RestoreRequest struct {

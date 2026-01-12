@@ -2,6 +2,8 @@ package cron
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -15,7 +17,7 @@ import (
 )
 
 type CronService struct {
-	config       config.CronJob
+	config       config.CKManConfig
 	jobSchedules map[int16]string
 	cron         *cron.Cron
 }
@@ -27,7 +29,7 @@ var JobList = map[int16]func() error{
 	JOB_CLEAR_ZNODES:         ClearZnodes,
 }
 
-func NewCronService(config config.CronJob) *CronService {
+func NewCronService(config config.CKManConfig) *CronService {
 	return &CronService{
 		config:       config,
 		jobSchedules: make(map[int16]string),
@@ -36,14 +38,14 @@ func NewCronService(config config.CronJob) *CronService {
 }
 
 func (job *CronService) schedulePadding() {
-	job.jobSchedules[JOB_SYNC_LOGIC_SCHEMA] = common.GetStringwithDefault(job.config.SyncLogicSchema, SCHEDULE_EVERY_MIN)
-	job.jobSchedules[JOB_WATCH_CLUSTER_STATUS] = common.GetStringwithDefault(job.config.WatchClusterStatus, SCHEDULE_WATCH_DEFAULT)
-	job.jobSchedules[JOB_SYNC_DIST_SCHEMA] = common.GetStringwithDefault(job.config.SyncDistSchema, SCHEDULE_SYNC_DIST)
-	job.jobSchedules[JOB_CLEAR_ZNODES] = common.GetStringwithDefault(job.config.ClearZnodes, SCHEDULE_DISABLED)
+	job.jobSchedules[JOB_SYNC_LOGIC_SCHEMA] = common.GetStringwithDefault(job.config.Cron.SyncLogicSchema, SCHEDULE_EVERY_MIN)
+	job.jobSchedules[JOB_WATCH_CLUSTER_STATUS] = common.GetStringwithDefault(job.config.Cron.WatchClusterStatus, SCHEDULE_WATCH_DEFAULT)
+	job.jobSchedules[JOB_SYNC_DIST_SCHEMA] = common.GetStringwithDefault(job.config.Cron.SyncDistSchema, SCHEDULE_SYNC_DIST)
+	job.jobSchedules[JOB_CLEAR_ZNODES] = common.GetStringwithDefault(job.config.Cron.ClearZnodes, SCHEDULE_DISABLED)
 }
 
 func (job *CronService) Start() error {
-	if !job.config.Enabled {
+	if !job.config.Cron.Enabled {
 		return nil
 	}
 	job.schedulePadding()
@@ -115,10 +117,7 @@ func RemoveJob(id string) {
 	lock.Unlock()
 }
 
-func (job *CronService) RunDynamicJobs() {
-	if DynamicJobs == nil {
-		DynamicJobs = make(map[string]Job)
-	}
+func addJobFromBackups(self string) {
 	backups, err := repository.Ps.GetBackupByShechuleType(model.BACKUP_SCHEDULED)
 	if err != nil {
 		log.Logger.Errorf("get backup failed: %v", err)
@@ -126,20 +125,39 @@ func (job *CronService) RunDynamicJobs() {
 	}
 	log.Logger.Infof("found backups: %d", len(backups))
 	for _, backup := range backups {
+		if self != backup.Instance {
+			continue
+		}
 		log.Logger.Infof("add backup job: %s, spec: %s", backup.BackupId, backup.Crontab)
 		AddJob(backup.BackupId, backup.Crontab, func() error {
-			return clickhouse.BackupManage(backup.BackupId)
+			return clickhouse.BackupManage(backup.BackupId, self)
 		})
 	}
+}
+
+func (job *CronService) RunDynamicJobs() {
+	if DynamicJobs == nil {
+		DynamicJobs = make(map[string]Job)
+	}
+	self := net.JoinHostPort(job.config.Server.Ip, fmt.Sprint(job.config.Server.Port))
+	// ckman刚启动时，先把定时任务加上
+	addJobFromBackups(self)
 
 	ticker := time.NewTicker(time.Second * 10)
-	ctx := context.Background()
 	defer ticker.Stop()
+	ticker2 := time.NewTicker(time.Minute * 1)
+	defer ticker2.Stop()
+
+	ctx := context.Background()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-ticker2.C:
+			// 别的ckman创建的定时任务，需要当前ckman执行的，走这个分支
+			addJobFromBackups(self)
 		case <-ticker.C:
+			// 即时操作的，使用当前ckman创建的定时任务，走这个分支
 			lock.Lock()
 			for k, v := range DynamicJobs {
 				switch v.op {

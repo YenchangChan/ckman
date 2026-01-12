@@ -33,13 +33,18 @@ func (b *Back) SetStatus(status string) error {
 	return repository.Ps.UpdateBackup(b.b)
 }
 
-func BackupManage(backupId string) error {
+func BackupManage(backupId, self string) error {
 	backup, err := repository.Ps.GetBackupById(backupId)
 	if err != nil {
 		return err
 	}
 	b := Back{
 		b: backup,
+	}
+	if b.b.ScheduleType == model.BACKUP_SCHEDULED {
+		if b.b.Instance != self {
+			return nil
+		}
 	}
 	b.SetStatus(model.BACKUP_STATUS_INIT)
 	log.Logger.Infof("[backup] init %s.%s", backup.Database, backup.Table)
@@ -65,12 +70,14 @@ func BackupManage(backupId string) error {
 		}
 		log.Logger.Infof("[backup] %s.%s backup success", backup.Database, backup.Table)
 		log.Logger.Infof("[backup] %s.%s check", backup.Database, backup.Table)
-		b.SetStatus(model.BACKUP_STATUS_CHECK)
-		if err = b.Check(); err != nil {
-			b.SetStatus(model.BACKUP_STATUS_FAILED)
-			return err
+		if b.b.Checksum {
+			b.SetStatus(model.BACKUP_STATUS_CHECK)
+			if err = b.Check(); err != nil {
+				b.SetStatus(model.BACKUP_STATUS_FAILED)
+				return err
+			}
+			log.Logger.Infof("[backup] %s.%s check success", backup.Database, backup.Table)
 		}
-		log.Logger.Infof("[backup] %s.%s check success", backup.Database, backup.Table)
 	} else if b.b.Operation == model.OP_RESTORE {
 		log.Logger.Infof("[backup] %s.%s restore", backup.Database, backup.Table)
 		b.SetStatus(model.BACKUP_STATUS_RESTORE)
@@ -222,88 +229,91 @@ func (b *Back) Prepare() error {
 		log.Logger.Infof("partition: %s, size: %d, rows: %d", partition.Partition, b.b.Partitions[i].Size, b.b.Partitions[i].Rows)
 	}
 	repository.Ps.UpdateBackup(b.b)
-	// 获取待备份的文件个数，md5sum
-	for i, partition := range b.b.Partitions {
-		if partition.Status != model.BACKUP_PARTITION_STATUS_WAITING {
-			continue
-		}
-		fileNum := 0
-		pexpr := fmt.Sprintf(" partition = '%s' AND ", partition.Partition)
-		if partition.Partition == "all" {
-			pexpr = ""
-		}
-		query := fmt.Sprintf("SELECT path FROM system.parts WHERE %s database = '%s' AND table = '%s' and active = '1'", pexpr, b.b.Database, b.b.Table)
-		log.Logger.Infof("query: %s", query)
-		b.wg.Add(len(b.c.ckConns))
-		var lastErr error
-		for _, conn := range b.c.ckConns {
-			go func(conn *common.Conn) {
-				defer b.wg.Done()
-				rows, err := conn.Query(query)
-				if err != nil {
-					lastErr = err
-					return
-				}
-				for rows.Next() {
-					var path string
-					if err = rows.Scan(&path); err != nil {
+
+	if b.b.Checksum {
+		// 获取待备份的文件个数，md5sum
+		for i, partition := range b.b.Partitions {
+			if partition.Status != model.BACKUP_PARTITION_STATUS_WAITING {
+				continue
+			}
+			fileNum := 0
+			pexpr := fmt.Sprintf(" partition = '%s' AND ", partition.Partition)
+			if partition.Partition == "all" {
+				pexpr = ""
+			}
+			query := fmt.Sprintf("SELECT path FROM system.parts WHERE %s database = '%s' AND table = '%s' and active = '1'", pexpr, b.b.Database, b.b.Table)
+			log.Logger.Infof("query: %s", query)
+			b.wg.Add(len(b.c.ckConns))
+			var lastErr error
+			for _, conn := range b.c.ckConns {
+				go func(conn *common.Conn) {
+					defer b.wg.Done()
+					rows, err := conn.Query(query)
+					if err != nil {
 						lastErr = err
 						return
 					}
-					opts := common.SshOptions{
-						Host:             conn.Host(),
-						User:             b.conf.SshUser,
-						Password:         b.conf.SshPassword,
-						Port:             b.conf.SshPort,
-						NeedSudo:         b.conf.NeedSudo,
-						AuthenticateType: b.conf.AuthenticateType,
-					}
-					// 获取文件的md5sum
-					cmd := fmt.Sprintf("find %s -type f |xargs md5sum", path)
-					out, err := common.RemoteExecute(opts, cmd)
-					if err != nil {
-						lastErr = err
-					}
-					log.Logger.Debugf("out: %s", out)
-					for _, line := range strings.Split(out, "\n") {
-						if line == "" {
-							continue
-						}
-						fields := strings.Fields(line)
-						if len(fields) != 2 {
-							lastErr = fmt.Errorf("md5sum output format error: %s", line)
+					for rows.Next() {
+						var path string
+						if err = rows.Scan(&path); err != nil {
+							lastErr = err
 							return
 						}
-						md5sum := fields[0]
-						pp := strings.Split(fields[1], "/")
-						partfiles := strings.Join(pp[len(pp)-2:], "/")
-						key := fmt.Sprintf("%s/%s.%s/%s/data/%s/%s/%s",
-							partition.Partition, b.b.Database, b.b.Table, conn.Host(), b.b.Database, b.b.Table, partfiles)
-						b.lock.Lock()
-						if b.b.Partitions[i].PathInfo == nil {
-							b.b.Partitions[i].PathInfo = make(map[string]model.PathInfo)
+						opts := common.SshOptions{
+							Host:             conn.Host(),
+							User:             b.conf.SshUser,
+							Password:         b.conf.SshPassword,
+							Port:             b.conf.SshPort,
+							NeedSudo:         b.conf.NeedSudo,
+							AuthenticateType: b.conf.AuthenticateType,
 						}
-						b.b.Partitions[i].PathInfo[key] = model.PathInfo{
-							Host:  conn.Host(),
-							RPath: key,
-							LPath: fields[1],
-							MD5:   md5sum,
+						// 获取文件的md5sum
+						cmd := fmt.Sprintf("find %s -type f |xargs md5sum", path)
+						out, err := common.RemoteExecute(opts, cmd)
+						if err != nil {
+							lastErr = err
 						}
-						fileNum++
-						b.lock.Unlock()
-						log.Logger.Debugf("clickhouse local path:[%s] path: %s, key: %s, checksum: %s", conn.Host(), fields[1], key, md5sum)
+						log.Logger.Debugf("out: %s", out)
+						for _, line := range strings.Split(out, "\n") {
+							if line == "" {
+								continue
+							}
+							fields := strings.Fields(line)
+							if len(fields) != 2 {
+								lastErr = fmt.Errorf("md5sum output format error: %s", line)
+								return
+							}
+							md5sum := fields[0]
+							pp := strings.Split(fields[1], "/")
+							partfiles := strings.Join(pp[len(pp)-2:], "/")
+							key := fmt.Sprintf("%s/%s.%s/%s/data/%s/%s/%s",
+								partition.Partition, b.b.Database, b.b.Table, conn.Host(), b.b.Database, b.b.Table, partfiles)
+							b.lock.Lock()
+							if b.b.Partitions[i].PathInfo == nil {
+								b.b.Partitions[i].PathInfo = make(map[string]model.PathInfo)
+							}
+							b.b.Partitions[i].PathInfo[key] = model.PathInfo{
+								Host:  conn.Host(),
+								RPath: key,
+								LPath: fields[1],
+								MD5:   md5sum,
+							}
+							fileNum++
+							b.lock.Unlock()
+							log.Logger.Debugf("clickhouse local path:[%s] path: %s, key: %s, checksum: %s", conn.Host(), fields[1], key, md5sum)
+						}
 					}
-				}
-				rows.Close()
-			}(conn)
+					rows.Close()
+				}(conn)
+			}
+			b.wg.Wait()
+			if lastErr != nil {
+				return lastErr
+			}
+			b.b.Partitions[i].FileNum = uint64(fileNum)
 		}
-		b.wg.Wait()
-		if lastErr != nil {
-			return lastErr
-		}
-		b.b.Partitions[i].FileNum = uint64(fileNum)
+		repository.Ps.UpdateBackup(b.b)
 	}
-	repository.Ps.UpdateBackup(b.b)
 	// 清理备份目录的原始文件
 	if b.b.TargetType == model.BACKUP_LOCAL {
 		for _, conn := range b.c.ckConns {

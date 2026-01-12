@@ -2,9 +2,11 @@ package controller
 
 import (
 	"fmt"
+	"net"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-basic/uuid"
+	"github.com/housepower/ckman/config"
 	"github.com/housepower/ckman/model"
 	"github.com/housepower/ckman/repository"
 	"github.com/housepower/ckman/service/clickhouse"
@@ -12,11 +14,13 @@ import (
 )
 
 type DataManageController struct {
+	config *config.CKManConfig
 	Controller
 }
 
-func NewDataManageController(wrapfunc Wrapfunc) *DataManageController {
+func NewDataManageController(config *config.CKManConfig, wrapfunc Wrapfunc) *DataManageController {
 	return &DataManageController{
+		config: config,
 		Controller: Controller{
 			wrapfunc: wrapfunc,
 		},
@@ -89,20 +93,23 @@ func (controller *DataManageController) BackupData(c *gin.Context) {
 		}
 	}
 	backups := NewBackup(clusterName, req)
+	self := net.JoinHostPort(controller.config.Server.Ip, fmt.Sprint(controller.config.Server.Port))
 	for _, backup := range backups {
 		if err := repository.Ps.CreateBackup(backup); err != nil {
 			controller.wrapfunc(c, model.E_DATA_INSERT_FAILED, err)
 			return
 		}
 		if backup.ScheduleType == model.BACKUP_IMMEDIATE {
-			if err := clickhouse.BackupManage(backup.BackupId); err != nil {
+			if err := clickhouse.BackupManage(backup.BackupId, self); err != nil {
 				controller.wrapfunc(c, model.E_DATA_INSERT_FAILED, err)
 				return
 			}
 		} else if backup.ScheduleType == model.BACKUP_SCHEDULED {
-			cron.AddJob(backup.BackupId, backup.Crontab, func() error {
-				return clickhouse.BackupManage(backup.BackupId)
-			})
+			if self == backup.Instance {
+				cron.AddJob(backup.BackupId, backup.Crontab, func() error {
+					return clickhouse.BackupManage(backup.BackupId, self)
+				})
+			}
 		}
 	}
 	controller.wrapfunc(c, model.E_SUCCESS, nil)
@@ -162,7 +169,8 @@ func (controller *DataManageController) RestoreData(c *gin.Context) {
 		controller.wrapfunc(c, model.E_DATA_INSERT_FAILED, err)
 		return
 	}
-	if err := clickhouse.BackupManage(newBack.BackupId); err != nil {
+	self := net.JoinHostPort(controller.config.Server.Ip, fmt.Sprint(controller.config.Server.Port))
+	if err := clickhouse.BackupManage(newBack.BackupId, self); err != nil {
 		controller.wrapfunc(c, model.E_DATA_INSERT_FAILED, err)
 		return
 	}
@@ -220,6 +228,8 @@ func NewBackup(clusterName string, req model.BackupRequest) []model.Backup {
 		back.DaysBefore = req.DaysBefore
 		back.Clean = req.Clean
 		back.Compression = req.Compression
+		back.Checksum = req.Checksum
+		back.Instance = req.Instance
 		back.Status = model.BACKUP_STATUS_WAITING
 		if req.BackupStyle == model.BACKUP_BY_PARTITON {
 			var partitions []model.BackupLists
