@@ -755,7 +755,7 @@ func TestRealStages_Close_DropPartitionFailureFailsRun(t *testing.T) {
 	// Clean=true 时 DROP PARTITION 失败 → 整体 run failed（修 #7）
 	repo := newFakeExecRepo(model.BackupPolicy{PolicyID: "p1", Clean: true})
 	repo.runs["r1"] = model.BackupRun{
-		RunID: "r1", PolicyID: "p1", Database: "d", Table: "t",
+		RunID: "r1", PolicyID: "p1", Operation: model.OP_BACKUP, Database: "d", Table: "t",
 		Partitions: []model.BackupRunPartition{
 			{Partition: "20250508", Status: model.BACKUP_PARTITION_STATUS_SUCCESS},
 		},
@@ -791,7 +791,7 @@ func TestRealStages_Close_NoCleanReturnsNil(t *testing.T) {
 func TestRealStages_Close_OnlySuccessPartitionsDropped(t *testing.T) {
 	repo := newFakeExecRepo(model.BackupPolicy{PolicyID: "p1", Clean: true})
 	repo.runs["r1"] = model.BackupRun{
-		RunID: "r1", PolicyID: "p1", Database: "d", Table: "t",
+		RunID: "r1", PolicyID: "p1", Operation: model.OP_BACKUP, Database: "d", Table: "t",
 		Partitions: []model.BackupRunPartition{
 			{Partition: "20250507", Status: model.BACKUP_PARTITION_STATUS_SUCCESS},
 			{Partition: "20250508", Status: model.BACKUP_PARTITION_STATUS_FAILED},
@@ -816,6 +816,35 @@ func TestRealStages_Close_OnlySuccessPartitionsDropped(t *testing.T) {
 	}
 	if !strings.Contains(dropped[0], "20250507") {
 		t.Fatalf("dropped wrong partition: %s", dropped[0])
+	}
+}
+
+func TestRealStages_Close_RestoreNeverCleans(t *testing.T) {
+	// restore run 复用 backup policy(Clean=true)。恢复成功后绝不能清理刚恢复的数据,
+	// 否则数据恢复看似成功却被立刻 DROP(BUG)。
+	repo := newFakeExecRepo(model.BackupPolicy{PolicyID: "p1", Clean: true})
+	repo.runs["r1"] = model.BackupRun{
+		RunID: "r1", PolicyID: "p1", Operation: model.OP_RESTORE,
+		Database: "d", Table: "t",
+		Partitions: []model.BackupRunPartition{
+			{Partition: "20250508", Status: model.BACKUP_PARTITION_STATUS_SUCCESS},
+		},
+	}
+	dropped := []string{}
+	e := &Executor{
+		repo: repo, conns: []*shardConn{newFakeShardConn("h1")},
+		execSQL: func(_, sql string) error {
+			if strings.HasPrefix(sql, "ALTER TABLE") {
+				dropped = append(dropped, sql)
+			}
+			return nil
+		},
+	}
+	if err := (realStages{}).Close(context.Background(), e, "r1"); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if len(dropped) != 0 {
+		t.Fatalf("restore must NOT clean data, but dropped: %v", dropped)
 	}
 }
 

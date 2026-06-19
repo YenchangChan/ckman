@@ -499,8 +499,9 @@ func (b *Back) Check() error {
 }
 
 func (b *Back) Close() error {
-	// 清理原始数据库的数据
-	if b.b.Clean {
+	// 清理原始数据库的数据。仅备份操作才清理:restore 复用同一条记录(可能 Clean=true),
+	// 恢复成功后绝不能再 DROP 刚恢复的数据。
+	if b.b.Clean && b.b.Operation == model.OP_BACKUP {
 		for _, partition := range b.b.Partitions {
 			if partition.Status != model.BACKUP_PARTITION_STATUS_SUCCESS {
 				continue

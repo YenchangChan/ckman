@@ -544,6 +544,11 @@ func (realStages) Close(ctx context.Context, e *Executor, runID string) error {
 	if err != nil {
 		return err
 	}
+	// 清理动作只属于备份:把已成功备份的分区从源表删除。restore run 复用了 backup
+	// 的 policy(可能 Clean=true),但恢复成功后绝不能再 DROP 刚恢复的数据。
+	if run.Operation != model.OP_BACKUP {
+		return nil
+	}
 	if !policy.Clean {
 		return nil
 	}
