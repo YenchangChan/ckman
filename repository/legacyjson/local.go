@@ -643,6 +643,19 @@ func (lp *LocalPersistent) DeleteBackupPolicy(policyID string) error {
 	return nil
 }
 
+func (lp *LocalPersistent) HardDeleteBackupPolicy(policyID string) error {
+	lp.lock.Lock()
+	defer lp.lock.Unlock()
+	if _, ok := lp.Data.BackupPolicy[policyID]; !ok {
+		return repository.ErrRecordNotFound
+	}
+	delete(lp.Data.BackupPolicy, policyID)
+	if !lp.InTransAction {
+		_ = lp.dump()
+	}
+	return nil
+}
+
 func (lp *LocalPersistent) GetBackupPolicy(policyID string) (model.BackupPolicy, error) {
 	lp.lock.RLock()
 	defer lp.lock.RUnlock()

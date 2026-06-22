@@ -41,16 +41,25 @@ func (s *Service) UpdatePolicy(p model.BackupPolicy) error {
 	return s.repo.UpdatePolicy(p)
 }
 
-// DeletePolicy 软删 policy
+// DeletePolicy 物理删除 policy 及其名下所有 run 台账。
+// 此前是软删(deleted=true),会在 tbl_backup_policy 永久残留脏数据;现改为物理删,
+// 并级联物理删该 policy 的全部 run(否则 run 成为指向已删 policy 的孤儿)。
+// 存在进行中(queued/running)run 时拒绝,避免删掉正在执行的台账(与前端阻断一致)。
+// 远端 S3/本地备份文件是否清理由删任务流程的「同步删除」决定,与此无关。
 func (s *Service) DeletePolicy(policyID string) error {
-	p, err := s.repo.GetPolicy(policyID)
+	if len(s.repo.InFlightRunsByPolicy(policyID)) > 0 {
+		return fmt.Errorf("cannot delete policy %s with in-flight runs", policyID)
+	}
+	runs, err := s.repo.RunsByPolicy(policyID)
 	if err != nil {
 		return err
 	}
-	p.Deleted = true
-	p.Enabled = false
-	p.UpdateTime = time.Now()
-	return s.repo.UpdatePolicy(p)
+	for _, r := range runs {
+		if err := s.repo.DeleteRun(r.RunID); err != nil {
+			return err
+		}
+	}
+	return s.repo.HardDeletePolicy(policyID)
 }
 
 // DeleteRun 删除一次 run 的 ckman 台账记录。仅允许终态 run（success/failed/

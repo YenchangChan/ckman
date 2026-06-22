@@ -116,16 +116,48 @@ func TestUpdatePolicy_PreservesCreateTime(t *testing.T) {
 	}
 }
 
-func TestDeletePolicy_SoftDelete(t *testing.T) {
+func TestDeletePolicy_HardDeletesPolicyAndRuns(t *testing.T) {
 	repo := newMemRepo()
 	repo.policies["p1"] = model.BackupPolicy{PolicyID: "p1", Enabled: true}
+	// 两条本 policy 的终态 run + 一条其它 policy 的 run(不应被删)
+	repo.runs["r1"] = model.BackupRun{RunID: "r1", PolicyID: "p1", Status: model.BACKUP_STATUS_SUCCESS}
+	repo.runs["r2"] = model.BackupRun{RunID: "r2", PolicyID: "p1", Status: model.BACKUP_STATUS_FAILED}
+	repo.runs["r3"] = model.BackupRun{RunID: "r3", PolicyID: "other", Status: model.BACKUP_STATUS_SUCCESS}
 	svc := newServiceForTest("ckman-01", repo, &fakePool{})
 	if err := svc.DeletePolicy("p1"); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := repo.GetPolicy("p1")
-	if !got.Deleted || got.Enabled {
-		t.Fatalf("expected soft delete: %+v", got)
+	// policy 物理删:行不再存在(不是 deleted=true 的软删)
+	if _, ok := repo.policies["p1"]; ok {
+		t.Fatalf("policy should be hard-deleted, still present: %+v", repo.policies["p1"])
+	}
+	// 本 policy 的 run 台账全删
+	if _, ok := repo.runs["r1"]; ok {
+		t.Fatal("run r1 of deleted policy should be removed")
+	}
+	if _, ok := repo.runs["r2"]; ok {
+		t.Fatal("run r2 of deleted policy should be removed")
+	}
+	// 其它 policy 的 run 必须保留
+	if _, ok := repo.runs["r3"]; !ok {
+		t.Fatal("run r3 of other policy must be kept")
+	}
+}
+
+func TestDeletePolicy_RejectsInFlight(t *testing.T) {
+	repo := newMemRepo()
+	repo.policies["p1"] = model.BackupPolicy{PolicyID: "p1", Enabled: true}
+	repo.runs["r1"] = model.BackupRun{RunID: "r1", PolicyID: "p1", Status: model.BACKUP_STATUS_RUNNING}
+	svc := newServiceForTest("ckman-01", repo, &fakePool{})
+	if err := svc.DeletePolicy("p1"); err == nil {
+		t.Fatal("expected delete to be rejected while a run is in-flight")
+	}
+	// 拒绝后不得删除任何东西
+	if _, ok := repo.policies["p1"]; !ok {
+		t.Fatal("policy must remain when delete rejected")
+	}
+	if _, ok := repo.runs["r1"]; !ok {
+		t.Fatal("in-flight run must remain when delete rejected")
 	}
 }
 

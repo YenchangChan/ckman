@@ -42,6 +42,9 @@ func (PersistentRepoAdapter) GetPolicy(id string) (model.BackupPolicy, error) {
 func (PersistentRepoAdapter) UpdatePolicy(p model.BackupPolicy) error {
 	return repository.Ps.UpdateBackupPolicy(p)
 }
+func (PersistentRepoAdapter) HardDeletePolicy(id string) error {
+	return repository.Ps.HardDeleteBackupPolicy(id)
+}
 func (PersistentRepoAdapter) ListPoliciesByCluster(cluster string) ([]model.BackupPolicy, error) {
 	return repository.Ps.GetBackupPoliciesByCluster(cluster)
 }
@@ -56,6 +59,9 @@ func (PersistentRepoAdapter) DeleteRun(id string) error {
 }
 func (PersistentRepoAdapter) GetRun(id string) (model.BackupRun, error) {
 	return repository.Ps.GetBackupRun(id)
+}
+func (PersistentRepoAdapter) RunsByPolicy(policyID string) ([]model.BackupRun, error) {
+	return repository.Ps.GetRunsByPolicy(policyID, 0, time.Time{})
 }
 func (PersistentRepoAdapter) InFlightRunsByPolicy(policyID string) []model.BackupRun {
 	rs, err := repository.Ps.GetRunsInFlightByPolicy(policyID)

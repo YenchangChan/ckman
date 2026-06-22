@@ -14,11 +14,13 @@ type ServiceRepo interface {
 	CreatePolicy(p model.BackupPolicy) error
 	GetPolicy(id string) (model.BackupPolicy, error)
 	UpdatePolicy(p model.BackupPolicy) error
+	HardDeletePolicy(id string) error // 物理删 policy（不可逆）
 	ListPoliciesByCluster(cluster string) ([]model.BackupPolicy, error)
 	CreateRun(r model.BackupRun) error
 	UpdateRun(r model.BackupRun) error
 	DeleteRun(id string) error
 	GetRun(id string) (model.BackupRun, error)
+	RunsByPolicy(policyID string) ([]model.BackupRun, error) // 该 policy 全部 run（用于删任务级联）
 	InFlightRunsByPolicy(policyID string) []model.BackupRun
 	InFlightRunsByInstance(instance string) []model.BackupRun // 新增，Task 14
 	InFlightRunsByCluster(cluster string) []model.BackupRun   // 队列统计（QueueStats）

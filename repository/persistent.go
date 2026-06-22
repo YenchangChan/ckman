@@ -81,7 +81,8 @@ type PersistentBackupService interface {
 type PersistentBackupPolicyService interface {
 	CreateBackupPolicy(p model.BackupPolicy) error
 	UpdateBackupPolicy(p model.BackupPolicy) error
-	DeleteBackupPolicy(policyID string) error // 软删：仅置 deleted=true
+	DeleteBackupPolicy(policyID string) error     // 软删：仅置 deleted=true
+	HardDeleteBackupPolicy(policyID string) error // 物理删：DELETE FROM，行不保留
 	GetBackupPolicy(policyID string) (model.BackupPolicy, error)
 	GetBackupPoliciesByCluster(cluster string) ([]model.BackupPolicy, error)
 	GetActiveScheduledPolicies(instance string) ([]model.BackupPolicy, error) // enabled+scheduled+!deleted+instance==

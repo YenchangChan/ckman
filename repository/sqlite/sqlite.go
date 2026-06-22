@@ -669,6 +669,17 @@ func (sp *SQLitePersistent) DeleteBackupPolicy(policyID string) error {
 	return nil
 }
 
+func (sp *SQLitePersistent) HardDeleteBackupPolicy(policyID string) error {
+	tx := sp.Client.Where("policy_id = ?", policyID).Delete(&TblBackupPolicy{})
+	if tx.Error != nil {
+		return wrapError(tx.Error)
+	}
+	if tx.RowsAffected == 0 {
+		return repository.ErrRecordNotFound
+	}
+	return nil
+}
+
 func (sp *SQLitePersistent) GetBackupPolicy(policyID string) (model.BackupPolicy, error) {
 	var tbl TblBackupPolicy
 	if err := sp.Client.Where("policy_id = ?", policyID).First(&tbl).Error; err != nil {

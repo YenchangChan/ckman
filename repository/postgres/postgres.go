@@ -696,6 +696,11 @@ func (mp *PostgresPersistent) DeleteBackupPolicy(policyID string) error {
 	return wrapError(tx.Error)
 }
 
+func (mp *PostgresPersistent) HardDeleteBackupPolicy(policyID string) error {
+	tx := mp.Client.Where("policy_id = ?", policyID).Delete(&TblBackupPolicy{})
+	return wrapError(tx.Error)
+}
+
 func (mp *PostgresPersistent) GetBackupPolicy(policyID string) (model.BackupPolicy, error) {
 	var tbl TblBackupPolicy
 	if err := mp.Client.Where("policy_id = ?", policyID).First(&tbl).Error; err != nil {

@@ -651,6 +651,17 @@ func (mp *DM8Persistent) DeleteBackupPolicy(policyID string) error {
 	return nil
 }
 
+func (mp *DM8Persistent) HardDeleteBackupPolicy(policyID string) error {
+	tx := mp.Client.Where("policy_id = ?", policyID).Delete(&TblBackupPolicy{})
+	if tx.Error != nil {
+		return wrapError(tx.Error)
+	}
+	if tx.RowsAffected == 0 {
+		return repository.ErrRecordNotFound
+	}
+	return nil
+}
+
 func (mp *DM8Persistent) GetBackupPolicy(policyID string) (model.BackupPolicy, error) {
 	var tbl TblBackupPolicy
 	if err := mp.Client.Where("policy_id = ?", policyID).First(&tbl).Error; err != nil {
