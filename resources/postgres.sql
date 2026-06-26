@@ -92,6 +92,8 @@ CREATE INDEX IF NOT EXISTS idx_br_table_started
     ON tbl_backup_run(cluster_name, database_name, table_name, started_at);
 CREATE INDEX IF NOT EXISTS idx_br_status_instance
     ON tbl_backup_run(status, instance);
+CREATE INDEX IF NOT EXISTS idx_br_cluster_status
+    ON tbl_backup_run(cluster_name, status);
 
 -- 4.0.0 新增：用户管理（Phase 1）
 DROP TABLE IF EXISTS "tbl_user";
