@@ -1,8 +1,6 @@
 package dm8
 
 import (
-	"time"
-
 	"github.com/housepower/ckman/model"
 	dmSchema "github.com/wanlay/gorm-dm8/schema"
 	"gorm.io/gorm"
@@ -24,7 +22,7 @@ type TblQueryHistory struct {
 	ClusterName string        `gorm:"index:idx1"`
 	Checksum    string        `gorm:"primaryKey"`
 	Query       dmSchema.Clob `gorm:"size:1024000"`
-	CreateTime  time.Time
+	CreateTime  DmTime
 }
 
 type TblTask struct {
@@ -61,9 +59,9 @@ type TblBackupRun struct {
 	Table       string        `gorm:"column:table_name;index:idx_br_table_started"`
 	Status      string        `gorm:"column:status;index:idx_br_status_instance;index:idx_br_cluster_status"`
 	Instance    string        `gorm:"column:instance;index:idx_br_status_instance"`
-	StartedAt   time.Time     `gorm:"column:started_at;index:idx_br_policy_started;index:idx_br_table_started"`
+	StartedAt   DmTime        `gorm:"column:started_at;index:idx_br_policy_started;index:idx_br_table_started"`
 	Run         dmSchema.Clob `gorm:"column:run;size:1024000"`
-	CreateTime  time.Time     `gorm:"column:create_time"`
+	CreateTime  DmTime        `gorm:"column:create_time"`
 }
 
 type TblUser struct {

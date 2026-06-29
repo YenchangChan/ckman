@@ -269,7 +269,7 @@ func (mp *DM8Persistent) GetAllQueryHistory() (map[string]model.QueryHistory, er
 			CheckSum:   table.Checksum,
 			Cluster:    table.ClusterName,
 			QuerySql:   string(table.Query),
-			CreateTime: table.CreateTime,
+			CreateTime: table.CreateTime.Time(),
 		}
 		historys[table.Checksum] = history
 	}
@@ -288,7 +288,7 @@ func (mp *DM8Persistent) GetQueryHistoryByCluster(cluster string) ([]model.Query
 			CheckSum:   table.Checksum,
 			Cluster:    table.ClusterName,
 			QuerySql:   string(table.Query),
-			CreateTime: table.CreateTime,
+			CreateTime: table.CreateTime.Time(),
 		}
 		historys = append(historys, history)
 	}
@@ -305,7 +305,7 @@ func (mp *DM8Persistent) GetQueryHistoryByCheckSum(checksum string) (model.Query
 		CheckSum:   table.Checksum,
 		Cluster:    table.ClusterName,
 		QuerySql:   string(table.Query),
-		CreateTime: table.CreateTime,
+		CreateTime: table.CreateTime.Time(),
 	}
 	return history, nil
 }
@@ -315,7 +315,7 @@ func (mp *DM8Persistent) CreateQueryHistory(qh model.QueryHistory) error {
 		ClusterName: qh.Cluster,
 		Checksum:    qh.CheckSum,
 		Query:       dmSchema.Clob(qh.QuerySql),
-		CreateTime:  time.Now(),
+		CreateTime:  DmTime(time.Now()),
 	}
 	tx := mp.Client.Create(&table)
 	return wrapError(tx.Error)
@@ -326,7 +326,7 @@ func (mp *DM8Persistent) UpdateQueryHistory(qh model.QueryHistory) error {
 		ClusterName: qh.Cluster,
 		Checksum:    qh.CheckSum,
 		Query:       dmSchema.Clob(qh.QuerySql),
-		CreateTime:  time.Now(),
+		CreateTime:  DmTime(time.Now()),
 	}
 	tx := mp.Client.Model(TblQueryHistory{}).Where("checksum = ?", qh.CheckSum).Updates(&table)
 	return wrapError(tx.Error)
@@ -356,7 +356,7 @@ func (mp *DM8Persistent) GetEarliestQuery(cluster string) (model.QueryHistory, e
 		CheckSum:   table.Checksum,
 		Cluster:    table.ClusterName,
 		QuerySql:   string(table.Query),
-		CreateTime: table.CreateTime,
+		CreateTime: table.CreateTime.Time(),
 	}
 	return history, nil
 }
@@ -725,9 +725,9 @@ func (mp *DM8Persistent) CreateBackupRun(r model.BackupRun) error {
 		Table:       r.Table,
 		Status:      r.Status,
 		Instance:    r.Instance,
-		StartedAt:   r.StartedAt,
+		StartedAt:   DmTime(r.StartedAt),
 		Run:         dmSchema.Clob(string(raw)),
-		CreateTime:  r.CreateTime,
+		CreateTime:  DmTime(r.CreateTime),
 	}
 	return wrapError(mp.Client.Create(&tbl).Error)
 }
@@ -740,7 +740,7 @@ func (mp *DM8Persistent) UpdateBackupRun(r model.BackupRun) error {
 	tx := mp.Client.Model(&TblBackupRun{}).Where("run_id = ?", r.RunID).Updates(map[string]interface{}{
 		"status":     r.Status,
 		"instance":   r.Instance,
-		"started_at": r.StartedAt,
+		"started_at": DmTime(r.StartedAt),
 		"run":        dmSchema.Clob(string(raw)),
 	})
 	if tx.Error != nil {
@@ -891,7 +891,7 @@ func (mp *DM8Persistent) MarkRunRunningIfQueued(runID, instance string, startedA
 		Updates(map[string]interface{}{
 			"status":     model.BACKUP_STATUS_RUNNING,
 			"instance":   instance,
-			"started_at": startedAt,
+			"started_at": DmTime(startedAt),
 			"run":        dmSchema.Clob(string(raw)),
 		})
 	if tx.Error != nil {
