@@ -294,7 +294,7 @@ func GetCkTableMetrics(conf *model.CKManClickHouseConfig, database string, cols 
 
 	// get columns
 	if common.ArraySearch("columns", cols) || len(cols) == 0 {
-		if err = getCkTableMetricColumns(conf, metrics, dbs); err != nil {
+		if err = getCkTableMetricColumns(service, metrics, conf.Cluster, dbs); err != nil {
 			return nil, err
 		}
 	}
@@ -359,35 +359,36 @@ func GetCkTableMetrics(conf *model.CKManClickHouseConfig, database string, cols 
 	return metrics, nil
 }
 
-func getCkTableMetricColumns(conf *model.CKManClickHouseConfig, metrics map[string]*model.CkTableMetrics, dbs string) error {
-	query := fmt.Sprintf("SELECT table, count() as columns, database FROM system.columns WHERE database in ('%s') GROUP BY table, database", dbs)
-
-	var lastErr error
-	var queryOK bool
-	for _, host := range conf.Hosts {
-		conn, err := common.ConnectClickHouse(host, model.ClickHouseDefaultDB, conf.GetConnOption())
-		if err != nil {
-			lastErr = err
-			log.Logger.Warnf("connect clickhouse %s failed when get table columns: %v", host, err)
-			continue
-		}
-
-		service := &CkService{
-			Config: conf,
-			Conn:   conn,
-		}
-		value, err := service.QueryInfo(query)
-		if err != nil {
-			lastErr = err
-			log.Logger.Warnf("query table columns from %s failed: %v", host, err)
-			continue
-		}
-
-		queryOK = true
-		mergeCkTableMetricColumns(metrics, value)
+// getCkTableMetricColumns 统计每张表的列数。
+//
+// 关键点有二:
+//
+//  1. 不走 service.QueryInfo:QueryInfo 为防止 ad-hoc 查询 OOM,把结果硬截断在 1 万行
+//     (见 clickhouse_service.go 的 `len(colData) >= 10001` break)。而本查询是按
+//     (table, database) 分组统计 system.columns,行数 = 全库全表数,实测可达上万行,
+//     超出部分会被直接丢弃,落在 1 万行之后的表列数停在初始值 0——这正是历史上反复修
+//     不好的「部分表列数为 0、刷新多次仍为 0」的真正根因。这里改为直接 Query + 全量
+//     Scan,不设上限。
+//  2. 用 uniqExact(name) 而非 count():system.columns 里同一张表在每个 shard/副本各有
+//     一份相同列定义,cluster() 会把它们全部 union 进来,count() 会累加导致多 shard
+//     列数翻倍;uniqExact(name) 取 distinct 列名个数,无论几个节点都等于真实列数。
+func getCkTableMetricColumns(service *CkService, metrics map[string]*model.CkTableMetrics, cluster, dbs string) error {
+	query := fmt.Sprintf("SELECT table, uniqExact(name) AS columns, database FROM cluster('%s', system.columns) WHERE database in ('%s') GROUP BY table, database", cluster, dbs)
+	rows, err := service.Conn.Query(query)
+	if err != nil {
+		return err
 	}
-	if !queryOK {
-		return lastErr
+	defer rows.Close()
+	for rows.Next() {
+		var table, database string
+		var columns uint64
+		if err := rows.Scan(&table, &columns, &database); err != nil {
+			return err
+		}
+		tableName := fmt.Sprintf("%s.%s", database, table)
+		if metric, ok := metrics[tableName]; ok {
+			metric.Columns = columns
+		}
 	}
 	return nil
 }
