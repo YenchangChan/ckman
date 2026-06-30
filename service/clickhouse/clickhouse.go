@@ -1043,7 +1043,11 @@ func GetPartitions(conf *model.CKManClickHouseConfig, database, tableName string
 		limitN = fmt.Sprintf("LIMIT %d", limit)
 	}
 
-	query := fmt.Sprintf(`SELECT 
+	// 按 partition+partition_id 聚合,不再按 disk_name 拆分。多 disk/分层存储下,
+	// 一个分区的 part 会分布在多块盘上;若按 disk_name 分组会产生多行,而下方 map 以
+	// partition_id 为 key,只会保留最后一块盘的那行,导致 rows/bytes 被严重低估。
+	// 这里用 groupUniqArray 把涉及的盘聚成一个逗号分隔列表,sum 出来的就是跨盘合计。
+	query := fmt.Sprintf(`SELECT
     partition,
 	count(name),
     sum(rows),
@@ -1051,13 +1055,12 @@ func GetPartitions(conf *model.CKManClickHouseConfig, database, tableName string
     sum(data_uncompressed_bytes),
     min(min_time),
     max(max_time),
-    disk_name,
+    arrayStringConcat(arraySort(groupUniqArray(disk_name)), ','),
 	partition_id
 FROM cluster('%s', system.parts)
 WHERE (database = '%s') AND (table = '%s') AND (active = 1)
 GROUP BY
     partition,
-    disk_name,
 	partition_id
 ORDER BY partition DESC %s`, conf.Cluster, database, tableName, limitN)
 	log.Logger.Infof("query: %s", query)
@@ -1092,6 +1095,14 @@ ORDER BY partition DESC %s`, conf.Cluster, database, tableName, limitN)
 	}
 	for i := 1; i < len(value); i++ {
 		partitionId := value[i][0].(string)
+		// 同一个 partition 可能同时存在 active part 与 detached part(例如部分 part
+		// 被 detach、或 FETCH/ATTACH 过程中)。此时绝不能用 detached 的全 0 条目覆盖
+		// 上面 system.parts 查到的真实 rows/bytes,否则该分区会被刷成「全 0 且 Status
+		// =false」——看起来像 detached、实则有数据。只有当某 partition_id 完全没有
+		// active part 时,才把它当作纯 detached 分区登记。
+		if _, ok := partInfo[partitionId]; ok {
+			continue
+		}
 		part := model.PartitionInfo{
 			Database:    database,
 			Table:       tableName,
