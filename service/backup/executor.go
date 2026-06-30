@@ -28,8 +28,9 @@ type ExecRepo interface {
 // shardConn 是 Executor 内部用的 shard 句柄。
 // 真实实现持有 *common.Conn；测试用 fake 仅持 host（conn 为 nil）。
 type shardConn struct {
-	host string
-	conn *common.Conn // 真实 adapter 注入；测试 fake 留 nil
+	host    string
+	conn    *common.Conn // 真实 adapter 注入；测试 fake 留 nil
+	cluster string       // CH 集群名(remote_servers 里的),供分区发现走 clusterAllReplicas 用
 }
 
 // stages 让 Executor 把 5 个阶段分别可单测。

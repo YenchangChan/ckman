@@ -230,3 +230,27 @@ func TestSuccessfulPartitionsFromRuns_EmptyOperationTreatedAsBackup(t *testing.T
 		t.Fatalf("legacy run with empty operation should count, got %v", got)
 	}
 }
+
+func TestClickHouseAdapter_ConnFactory_SetsClusterName(t *testing.T) {
+	cluster := model.CKManClickHouseConfig{
+		Cluster: "ch_macro_name",
+		Shards: []model.CkShard{
+			{Replicas: []model.CkReplica{{Ip: "h1"}}},
+			{Replicas: []model.CkReplica{{Ip: "h2"}}},
+		},
+	}
+	a := &ClickHouseAdapter{
+		getCluster: func(string) (model.CKManClickHouseConfig, error) { return cluster, nil },
+		dial:       func(string, model.ConnetOption) (*common.Conn, error) { return nil, nil },
+	}
+	conns, err := a.ConnFactory("ckA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 每个 shardConn 都要带上真实 CH 集群名,否则分区发现 clusterAllReplicas 拿不到集群
+	for i, c := range conns {
+		if c.cluster != "ch_macro_name" {
+			t.Fatalf("conns[%d].cluster = %q, want ch_macro_name", i, c.cluster)
+		}
+	}
+}

@@ -67,7 +67,7 @@ func (a *ClickHouseAdapter) ConnFactory(cluster string) ([]*shardConn, error) {
 				log.Logger.Warnf("[backup] shard %d replica %s unreachable: %v", idx, replica.Ip, derr)
 				continue
 			}
-			got = &shardConn{host: replica.Ip, conn: conn}
+			got = &shardConn{host: replica.Ip, conn: conn, cluster: cc.Cluster}
 			break
 		}
 		if got == nil {
@@ -80,6 +80,11 @@ func (a *ClickHouseAdapter) ConnFactory(cluster string) ([]*shardConn, error) {
 
 // ListPartitions 列指定表 fromYYYYMMDD <= partition <= toYYYYMMDD 的所有分区。
 // fromYYYYMMDD 为空时不限制下界，兼容老的「<= N 天前」策略。
+//
+// 走 clusterAllReplicas(集群名, system.parts) 跨全集群发现分区,而非只查
+// conns[0] 单分片的本地 system.parts:多 shard 集群里数据按 sharding key 分布,
+// 某分区可能只落在非 conns[0] 的分片上,只查单分片会漏判为「no partitions」。
+// SELECT DISTINCT 天然对跨 shard/副本的重复分区去重。
 func (a *ClickHouseAdapter) ListPartitions(c *shardConn, db, table, fromYYYYMMDD, toYYYYMMDD string) ([]string, error) {
 	if c == nil || c.conn == nil {
 		return nil, fmt.Errorf("ListPartitions: nil conn for host %s", func() string {
@@ -99,8 +104,8 @@ func (a *ClickHouseAdapter) ListPartitions(c *shardConn, db, table, fromYYYYMMDD
 		where = fmt.Sprintf("partition >= '%s' AND %s", strings.ReplaceAll(fromYYYYMMDD, "'", "''"), where)
 	}
 	query := fmt.Sprintf(
-		"SELECT DISTINCT partition FROM system.parts WHERE %s ORDER BY partition",
-		where,
+		"SELECT DISTINCT partition FROM clusterAllReplicas('%s', system.parts) WHERE %s ORDER BY partition",
+		c.cluster, where,
 	)
 	rows, err := c.conn.Query(query)
 	if err != nil {
@@ -129,7 +134,8 @@ func (a *ClickHouseAdapter) ListAllPartitions(c *shardConn, db, table string) ([
 		}())
 	}
 	query := fmt.Sprintf(
-		"SELECT DISTINCT partition FROM system.parts WHERE database = '%s' AND `table` = '%s' AND active = 1 ORDER BY partition",
+		"SELECT DISTINCT partition FROM clusterAllReplicas('%s', system.parts) WHERE database = '%s' AND `table` = '%s' AND active = 1 ORDER BY partition",
+		c.cluster,
 		strings.ReplaceAll(db, "'", "''"),
 		strings.ReplaceAll(table, "'", "''"),
 	)
