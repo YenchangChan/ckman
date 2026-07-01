@@ -1,0 +1,47 @@
+# 持久化后端真库集成测试
+
+这套测试(build tag `dbintegration`,平时不参与构建)对 `mysql` / `dm8` / `postgres`
+三个后端**连真库**跑一遍:连启 3 次(抓 AutoMigrate 非幂等 / 达梦大小写重启崩)、
+零值时间 backup_run(抓达梦 -6118 / MySQL DATETIME 越界)、以及各实体 CRUD 往返。
+
+它调用的是 `repository.Ps` 的真方法(和 ckman 生产同一路径),**不是裸写 SQL**——
+这些 bug 恰恰藏在方法内部(哨兵时间包装、`ensureSchema`、JSON blob 等),mock 单测
+一律抓不到。给哪个库的环境变量就测哪个,没给的自动 Skip。
+
+## 一条命令:本地真 PostgreSQL 回归
+
+不需要预备任何库,脚本自动拉起 `postgres:16` 容器、跑测试、跑完删容器:
+
+```bash
+./repository/dbtest/pg-local-test.sh
+```
+
+## 手动指定各后端
+
+```bash
+# MySQL
+export DBTEST_MYSQL_HOST=... DBTEST_MYSQL_PORT=3306 \
+       DBTEST_MYSQL_USER=root DBTEST_MYSQL_PASS=... DBTEST_MYSQL_DB=ckman_db
+
+# 达梦 DM8(Schema 用不到,可不填)
+export DBTEST_DM_HOST=... DBTEST_DM_PORT=5236 DBTEST_DM_USER=sysdba DBTEST_DM_PASS=...
+
+# PostgreSQL / openGauss(openGauss 用 user=gaussdb db=postgres,sslmode 已在 DSN 里 disable)
+export DBTEST_PG_HOST=... DBTEST_PG_PORT=5432 \
+       DBTEST_PG_USER=postgres DBTEST_PG_PASS=... DBTEST_PG_DB=ckman_db
+
+go test -tags dbintegration -v ./repository/dbtest/ -run TestBackends
+```
+
+- 指向**空的测试库**,勿指生产:测试建表 + 写 `dbtest_` 前缀数据并自动清理,但连启会重跑迁移。
+- 单跑某个后端:`-run TestBackends/mysql`(或 `/dm8` `/postgres`)。
+
+## 快速起各类库(参考)
+
+```bash
+# 真 PostgreSQL
+docker run -d --name pgtest -e POSTGRES_PASSWORD=Test@1234 -e POSTGRES_DB=ckman_db -p 5433:5432 postgres:16
+
+# openGauss(国产 PG 兼容,默认用户 gaussdb)
+docker run -d --name opengauss --privileged=true -p 25432:5432 -e GS_PASSWORD=Euler@1234 enmotech/opengauss:latest
+```
