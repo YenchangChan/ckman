@@ -2,6 +2,7 @@ package dm8
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -62,8 +63,13 @@ func (mp *DM8Persistent) Init(config interface{}) error {
 	mp.Client = db
 	mp.ParentDB = mp.Client
 
-	//auto create table
-	err = mp.Client.AutoMigrate(
+	// 建表/迁移:不直接用 gorm 的 AutoMigrate。达梦区分大小写时,vendored gorm-dm8
+	// 的 HasTable/HasColumn 用 Go 侧小写名去查大写存储的对象,一律查不到,导致每次
+	// 重启都重复 CREATE TABLE / ADD COLUMN / CREATE INDEX,报 -2124/-2116/-2140,
+	// init persistent 直接 FATAL(首次建库能过、重启必崩)。改用 ensureSchema:用
+	// ckman 自己的大小写无关核对判断表/列/索引是否真的存在,只补确实缺的,首次建库后
+	// 重启不产生任何 DDL。
+	if err = mp.ensureSchema([]interface{}{
 		&TblCluster{},
 		&TblLogic{},
 		&TblQueryHistory{},
@@ -72,11 +78,102 @@ func (mp *DM8Persistent) Init(config interface{}) error {
 		&TblBackupPolicy{},
 		&TblBackupRun{},
 		&TblUser{}, // Phase 1 用户管理
-	)
-	if err != nil {
+	}); err != nil {
 		return errors.Wrap(err, "")
 	}
 	return nil
+}
+
+// ensureSchema 是 AutoMigrate 的替身,规避 gorm-dm8 在区分大小写达梦上 Has* 全线
+// 失效的问题(见 Init 里的说明)。它用 UPPER() 大小写无关地核对真实表结构,只对确实
+// 缺失的对象执行 DDL:
+//   - 表不存在      → CreateTable(连带建列与索引;此时对真缺失的表 HasTable 判断是对的)
+//   - 表在、列缺    → AddColumn
+//   - 表在、索引缺  → CreateIndex
+//
+// 另做兜底:万一某个 DDL 仍报「已存在」(如索引名计算与达梦存储有细微出入),按幂等
+// 处理忽略,不 FATAL —— 即用户要求的「automigrate 失败不要 fatal,结构对就放过」。
+func (mp *DM8Persistent) ensureSchema(models []interface{}) error {
+	tables, err := mp.upperNameSet("SELECT TABLE_NAME FROM USER_TABLES")
+	if err != nil {
+		return errors.Wrap(err, "list tables")
+	}
+	for _, m := range models {
+		stmt := &gorm.Statement{DB: mp.Client}
+		if err := stmt.Parse(m); err != nil {
+			return errors.Wrap(err, "parse model")
+		}
+		table := stmt.Table
+
+		if !tables[strings.ToUpper(table)] {
+			if err := mp.Client.Migrator().CreateTable(m); err != nil && !isDuplicateObjectErr(err) {
+				return errors.Wrapf(err, "create table %s", table)
+			}
+			continue
+		}
+
+		// 表已存在:补缺失的列
+		cols, err := mp.upperNameSet(fmt.Sprintf(
+			"SELECT COLUMN_NAME FROM USER_TAB_COLUMNS WHERE TABLE_NAME = UPPER('%s')",
+			strings.ReplaceAll(table, "'", "''")))
+		if err != nil {
+			return errors.Wrapf(err, "list columns of %s", table)
+		}
+		for _, dbname := range stmt.Schema.DBNames {
+			if cols[strings.ToUpper(dbname)] {
+				continue
+			}
+			if err := mp.Client.Migrator().AddColumn(m, dbname); err != nil && !isDuplicateObjectErr(err) {
+				return errors.Wrapf(err, "add column %s.%s", table, dbname)
+			}
+		}
+
+		// 表已存在:补缺失的索引(仅 tag 显式定义的;主键等隐式索引不管)
+		idxs, err := mp.upperNameSet(fmt.Sprintf(
+			"SELECT INDEX_NAME FROM USER_INDEXES WHERE TABLE_NAME = UPPER('%s')",
+			strings.ReplaceAll(table, "'", "''")))
+		if err != nil {
+			return errors.Wrapf(err, "list indexes of %s", table)
+		}
+		for _, idx := range stmt.Schema.ParseIndexes() {
+			if idxs[strings.ToUpper(mp.Client.NamingStrategy.IndexName(table, idx.Name))] {
+				continue
+			}
+			if err := mp.Client.Migrator().CreateIndex(m, idx.Name); err != nil && !isDuplicateObjectErr(err) {
+				return errors.Wrapf(err, "create index %s on %s", idx.Name, table)
+			}
+		}
+	}
+	return nil
+}
+
+// upperNameSet 执行只返回单列名字的查询,结果统一转大写去空白放进 set,供大小写无关比较。
+func (mp *DM8Persistent) upperNameSet(query string) (map[string]bool, error) {
+	rows, err := mp.Client.Raw(query).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	set := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		set[strings.ToUpper(strings.TrimSpace(name))] = true
+	}
+	return set, rows.Err()
+}
+
+// isDuplicateObjectErr 判断是否达梦的「对象/列/索引已存在」类错误(-2124/-2116/-2140),
+// 用作 ensureSchema 的幂等兜底:结构其实已在,就不当致命错误。
+func isDuplicateObjectErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "已存在") ||
+		strings.Contains(s, "-2124") || strings.Contains(s, "-2116") || strings.Contains(s, "-2140")
 }
 
 func (mp *DM8Persistent) Begin() error {
