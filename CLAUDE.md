@@ -74,6 +74,10 @@ The repository layer uses a factory pattern for pluggable backends:
 - `repository/persistent.go` defines interfaces for cluster, logic cluster, query history, task, and backup operations
 - `repository/{local,mysql,postgres,dm8}/` provide implementations
 - Configuration selects backend via `persistent_policy` setting
+- **Any change here must pass the real-DB integration scaffold** (`repository/dbtest/`) —
+  see "Database backend compatibility" under Testing. These backends have DB-specific
+  landmines (DM8 case-sensitivity, MySQL zero-time, Postgres migration) that only surface
+  against a real database, never in mock tests.
 
 ### Authentication Flow
 1. Login endpoint issues JWT token with username, client IP, and expiration
@@ -173,6 +177,30 @@ Test files use standard Go testing:
 - Unit tests: `*_test.go` files
 - Run all tests: `go test ./... -v`
 - Coverage: `go test ./... -coverprofile=coverage.txt`
+
+### Database backend compatibility (REQUIRED for any DB-related change)
+
+**Any change touching the persistent layer MUST be verified against real databases
+before being considered done** — this means changes to `repository/{mysql,postgres,dm8}/`,
+the models, time handling, schema/migration (`Init`), or any repository interface method.
+
+Mock unit tests CANNOT catch these bugs — they live inside the real driver/DB boundary
+(e.g. DM8 case-sensitive `Has*` failing on restart → -2124/-2116/-2140; MySQL rejecting
+Go zero-time `0000-00-00` → Error 1292; Postgres migration never creating some tables).
+The integration scaffold `repository/dbtest/` (build tag `dbintegration`) exercises the
+real `repository.Ps` methods against real MySQL/DM8/Postgres: connect-start ×3 (migration
+idempotency), zero-time backup_run, and full CRUD per entity.
+
+```bash
+# one-command real PostgreSQL regression (spins up postgres:16, tests, removes container)
+./repository/dbtest/pg-local-test.sh
+
+# or point env vars at real DBs and run all three (see repository/dbtest/README.md)
+go test -tags dbintegration -v ./repository/dbtest/ -run TestBackends
+```
+
+Run it for all three backends when the change is cross-backend (models, time, interface
+shape); at minimum run the affected backend. Do not rely on mocks or a single backend.
 
 ## Development Notes
 
