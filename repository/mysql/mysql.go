@@ -710,7 +710,7 @@ func (mp *MysqlPersistent) CreateBackupRun(r model.BackupRun) error {
 		Table:       r.Table,
 		Status:      r.Status,
 		Instance:    r.Instance,
-		StartedAt:   r.StartedAt,
+		StartedAt:   MysqlTime(r.StartedAt),
 		Run:         string(raw),
 		CreateTime:  r.CreateTime,
 	}
@@ -725,7 +725,7 @@ func (mp *MysqlPersistent) UpdateBackupRun(r model.BackupRun) error {
 	tx := mp.Client.Model(&TblBackupRun{}).Where("run_id = ?", r.RunID).Updates(map[string]interface{}{
 		"status":     r.Status,
 		"instance":   r.Instance,
-		"started_at": r.StartedAt,
+		"started_at": MysqlTime(r.StartedAt),
 		"run":        string(raw),
 	})
 	if tx.Error != nil {
@@ -879,7 +879,7 @@ func (mp *MysqlPersistent) MarkRunRunningIfQueued(runID, instance string, starte
 		Updates(map[string]interface{}{
 			"status":     model.BACKUP_STATUS_RUNNING,
 			"instance":   instance,
-			"started_at": startedAt,
+			"started_at": MysqlTime(startedAt),
 			"run":        string(raw),
 		})
 	if tx.Error != nil {
