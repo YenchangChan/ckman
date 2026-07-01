@@ -61,16 +61,49 @@ func (mp *PostgresPersistent) Init(config interface{}) error {
 	mp.Client = db
 	mp.ParentDB = mp.Client
 
-	//postgres automigrate have many bugs,so we create table with sql
-	//err = mp.Client.AutoMigrate(
-	//	&TblCluster{},
-	//	&TblLogic{},
-	//	&TblQueryHistory{},
-	//	&TblTask{},
-	//)
-	//if err != nil {
-	//	return err
-	//}
+	// postgres/openGauss 上 gorm 的 AutoMigrate 对这几个 model 建表不可靠(历史注释:
+	// "automigrate have many bugs"),之前只能靠手动跑 resources/postgres.sql,导致
+	// cluster/logic/query_history/task/backup 这几张表在代码里从没被建过——首次连接
+	// 就报 relation does not exist。改为和 backup/user 一致的 CREATE TABLE IF NOT EXISTS
+	// 幂等建表,列名/类型对齐 repository/postgres/model.go(注意 created_at/update_at/
+	// delete_at 在 model 里是 string 字段,故用 TEXT;id 用 BIGSERIAL 自增),不再依赖
+	// 手动 dbscript。
+	coreTblSQLs := []string{
+		`CREATE TABLE IF NOT EXISTS tbl_cluster (
+			id           BIGSERIAL PRIMARY KEY,
+			created_at   TEXT,
+			update_at    TEXT,
+			delete_at    TEXT,
+			cluster_name VARCHAR(382) UNIQUE,
+			config       TEXT
+		)`,
+		`CREATE TABLE IF NOT EXISTS tbl_logic (
+			logic_name      VARCHAR(382) PRIMARY KEY,
+			physic_clusters TEXT
+		)`,
+		`CREATE TABLE IF NOT EXISTS tbl_query_history (
+			cluster     VARCHAR(382),
+			checksum    VARCHAR(382) PRIMARY KEY,
+			query       TEXT,
+			create_time TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS tbl_task (
+			task_id VARCHAR(382) PRIMARY KEY,
+			status  BIGINT,
+			config  TEXT
+		)`,
+		`CREATE TABLE IF NOT EXISTS tbl_backup (
+			backup_id    VARCHAR(382) PRIMARY KEY,
+			cluster_name VARCHAR(382),
+			update_time  VARCHAR(32),
+			backup       TEXT
+		)`,
+	}
+	for _, sql := range coreTblSQLs {
+		if err := mp.Client.Exec(sql).Error; err != nil {
+			return errors.Wrap(err, "create core tables")
+		}
+	}
 
 	// 新增 backup_policy / backup_run 表（postgres automigrate 有 bug，手动建）
 	backupTblSQLs := []string{
