@@ -227,6 +227,9 @@ func MergeEnv() {
 }
 
 func ParseConfigFile(p, version string) error {
+	if err := LoadEnvFile(p); err != nil {
+		return err
+	}
 	f, err := os.Open(p)
 	if err != nil {
 		return errors.Wrap(err, "")

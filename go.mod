@@ -45,6 +45,7 @@ require (
 	github.com/hashicorp/consul/api v1.29.4
 	github.com/hjson/hjson-go/v4 v4.2.0
 	github.com/imdario/mergo v0.3.12
+	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/procfs v0.7.3
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/wanlay/gorm-dm8 v1.0.5

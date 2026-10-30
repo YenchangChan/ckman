@@ -292,6 +292,10 @@ func InitCmd() {
 	})
 	_ = rootCmd.Execute()
 	if EncryptPassword != "" {
+		if err := config.LoadEnvFile(ConfigFilePath); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
 		ciphertext, err := common.EncryptSecret(EncryptPassword, EncryptAlgorithm)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "encrypt failed: %v\n", err)

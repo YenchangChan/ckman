@@ -6,8 +6,9 @@
  
 {
   // 新写入密文的算法，默认 AESWITHHEXANDBASE64，兼容已有配置。
-  // 使用 SM4-GCM 时，先给 ckman 进程设置 16 字节密钥的十六进制表示：
-  // export CKMAN_SM4_KEY='<32位十六进制密钥>'
+  // 使用 SM4-GCM 时，在本配置文件同目录的 .ckman.env 中设置密钥：
+  // CKMAN_SM4_KEY=<16字节原始密钥或32位十六进制密钥>
+  // 也可以通过进程环境变量设置；进程环境变量优先于 .ckman.env。
   // 再执行：./ckman --encrypt-algorithm SM4 --encrypt '明文密码'
   // 把输出写成 ENC(密文)。新 SM4 密文带 sm4:gcm:v1: 前缀；旧 AES 的 ENC() 值仍可读取。
   // 集群配置旧 AES 密文也可读取；停止 ckman 后可运行 ckmanctl upgrade encryption --dry-run，

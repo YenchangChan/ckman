@@ -11,6 +11,7 @@ coverage.out
 coverage-all.out
 cscope.*
 ckmanpasswd
+**/.ckman.env
 migrate
 znodefix
 znode_count
