@@ -33,13 +33,15 @@ func (gsypt *Gosypt) ensurePassword(password string) (string, error) {
 		return password, nil
 	}
 	passwd := strings.TrimSuffix(strings.TrimPrefix(password, gsypt.prefix), gsypt.suffix)
-	if gsypt.algorithm == GosyptAlgorithm {
-		return AesDecryptECB(passwd), nil
+	if strings.HasPrefix(passwd, SM4SecretPrefix) || strings.HasPrefix(passwd, "sm4:") {
+		return DecryptSecret(passwd)
 	}
-	if gsypt.algorithm == GosyptSM4Algorithm {
+	// Older SM4 ENC values had no prefix. Their base64 representation is
+	// distinct from the legacy AES hexadecimal representation.
+	if !looksLikeLegacyAES(passwd) {
 		return SM4Decrypt(passwd)
 	}
-	return "", fmt.Errorf("unsupported encryption algorithm %q", gsypt.algorithm)
+	return DecryptSecret(passwd)
 }
 
 func (gsypt *Gosypt) SetAlgorithm(algorithm string) error {

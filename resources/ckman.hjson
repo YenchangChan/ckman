@@ -5,11 +5,13 @@
 // hjson(https://hjson.github.io/)  is easy for humans to read and write.
  
 {
-  // ENC() 密文的算法，默认 AESWITHHEXANDBASE64，兼容已有配置。
+  // 新写入密文的算法，默认 AESWITHHEXANDBASE64，兼容已有配置。
   // 使用 SM4-GCM 时，先给 ckman 进程设置 16 字节密钥的十六进制表示：
   // export CKMAN_SM4_KEY='<32位十六进制密钥>'
   // 再执行：./ckman --encrypt-algorithm SM4 --encrypt '明文密码'
-  // 把输出写成 ENC(密文)。启用 SM4 前需重新加密本文件所有已有的 ENC() 值。
+  // 把输出写成 ENC(密文)。新 SM4 密文带 sm4:gcm:v1: 前缀；旧 AES 的 ENC() 值仍可读取。
+  // 集群配置旧 AES 密文也可读取；停止 ckman 后可运行 ckmanctl upgrade encryption --dry-run，
+  // 再运行 ckmanctl upgrade encryption 完成集群密码的 SM4 迁移。
   // "encrypt_algorithm": "SM4",
 
   "server":{

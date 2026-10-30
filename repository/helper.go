@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/housepower/ckman/common"
+	"github.com/housepower/ckman/config"
 	"github.com/housepower/ckman/log"
 	"github.com/housepower/ckman/model"
 )
@@ -17,82 +18,114 @@ var (
 	ErrTransActionEnd   = fmt.Errorf("transaction already commit or rollback")
 )
 
-func EncodePasswd(conf *model.CKManClickHouseConfig) {
-	conf.Password = common.AesEncryptECB(conf.Password)
-	conf.SshPassword = common.AesEncryptECB(conf.SshPassword)
-	for idx, user := range conf.UsersConf.Users {
-		conf.UsersConf.Users[idx].Password = common.AesEncryptECB(user.Password)
+// EncodePasswd encrypts every secret in a cluster before persistence.
+func EncodePasswd(conf *model.CKManClickHouseConfig) error {
+	encode := func(field string, value *string) error {
+		ciphertext, err := common.EncryptSecret(*value, config.GlobalConfig.EncryptAlgorithm)
+		if err != nil {
+			return fmt.Errorf("cluster %s %s: %w", conf.Cluster, field, err)
+		}
+		*value = ciphertext
+		return nil
+	}
+	if err := encode("password", &conf.Password); err != nil {
+		return err
+	}
+	if err := encode("sshPassword", &conf.SshPassword); err != nil {
+		return err
+	}
+	conf.UsersConf.Users = append([]model.User(nil), conf.UsersConf.Users...)
+	for i := range conf.UsersConf.Users {
+		if err := encode(fmt.Sprintf("user[%d].password", i), &conf.UsersConf.Users[i].Password); err != nil {
+			return err
+		}
 	}
 	if conf.Storage != nil {
-		for idx, disk := range conf.Storage.Disks {
+		storage := *conf.Storage
+		storage.Disks = append([]model.Disk(nil), conf.Storage.Disks...)
+		for i := range storage.Disks {
+			disk := &storage.Disks[i]
 			if disk.Type == "s3" && disk.DiskS3 != nil {
-				conf.Storage.Disks[idx].DiskS3.AccessKeyID = common.AesEncryptECB(disk.DiskS3.AccessKeyID)
-				conf.Storage.Disks[idx].DiskS3.SecretAccessKey = common.AesEncryptECB(disk.DiskS3.SecretAccessKey)
+				s3 := *disk.DiskS3
+				disk.DiskS3 = &s3
+				if err := encode(fmt.Sprintf("disk[%d].accessKeyID", i), &s3.AccessKeyID); err != nil {
+					return err
+				}
+				if err := encode(fmt.Sprintf("disk[%d].secretAccessKey", i), &s3.SecretAccessKey); err != nil {
+					return err
+				}
 			}
 		}
+		conf.Storage = &storage
 	}
 	if conf.TlsConf != nil {
-		// 新建对象：入参可能与内存中的集群配置共享同一 TlsConf 指针
-		//
-		// 私钥先做 base64 再送入 AesEncryptECB：common.AesDecryptECB 用「首个小于
-		// 0x20 的字节」当作 PKCS 填充的起点来做截断（见 common/aes.go），PEM 私钥
-		// 里的换行符（0x0A）会被当成填充误截断，导致解密后的私钥不完整。
-		// base64 之后的字符集不含任何小于 0x20 的字节，可以安全地绕开这个截断逻辑。
-		conf.TlsConf = &model.TlsConf{
-			Cert:       conf.TlsConf.Cert,
-			Key:        common.AesEncryptECB(base64.StdEncoding.EncodeToString([]byte(conf.TlsConf.Key))),
-			SelfSigned: conf.TlsConf.SelfSigned,
+		// A fresh object prevents shared in-memory TLS pointers from being changed.
+		tls := *conf.TlsConf
+		if tls.Key != "" {
+			tls.Key = base64.StdEncoding.EncodeToString([]byte(tls.Key))
+			if err := encode("tlsConf.key", &tls.Key); err != nil {
+				return err
+			}
 		}
+		conf.TlsConf = &tls
 	}
+	return nil
 }
 
-func DecodePasswd(conf *model.CKManClickHouseConfig) {
-	conf.Password = common.AesDecryptECB(conf.Password)
-	conf.SshPassword = common.AesDecryptECB(conf.SshPassword)
-
-	var users []model.User
-	/*
-		conf.UsersConf.Users and lp.Data.Clusters[key] pointer the same address when policy is local
-		When conf changed, lp.Data will changed,too. which will cause panic when decode password (runtime error: slice bounds out of range [:16] with capacity 3)
-		That's not allow to happen, So we need another memory to storage users, to ensure that the original data (lp.Data) not changed when decode password
-	*/
-	for _, user := range conf.UsersConf.Users {
-		user.Password = common.AesDecryptECB(user.Password)
-		users = append(users, user)
+// DecodePasswd rejects corrupt or undecryptable ciphertext before it reaches callers.
+func DecodePasswd(conf *model.CKManClickHouseConfig) error {
+	decode := func(field string, value *string) error {
+		plain, err := common.DecryptSecret(*value)
+		if err != nil {
+			return fmt.Errorf("cluster %s %s: %w", conf.Cluster, field, err)
+		}
+		*value = plain
+		return nil
+	}
+	if err := decode("password", &conf.Password); err != nil {
+		return err
+	}
+	if err := decode("sshPassword", &conf.SshPassword); err != nil {
+		return err
+	}
+	users := append([]model.User(nil), conf.UsersConf.Users...)
+	for i := range users {
+		if err := decode(fmt.Sprintf("user[%d].password", i), &users[i].Password); err != nil {
+			return err
+		}
 	}
 	conf.UsersConf.Users = users
-
 	if conf.Storage != nil {
-		var disks []model.Disk
-		for _, disk := range conf.Storage.Disks {
+		storage := *conf.Storage
+		storage.Disks = append([]model.Disk(nil), conf.Storage.Disks...)
+		for i := range storage.Disks {
+			disk := &storage.Disks[i]
 			if disk.Type == "s3" && disk.DiskS3 != nil {
-				disk.DiskS3.AccessKeyID = common.AesDecryptECB(disk.DiskS3.AccessKeyID)
-				disk.DiskS3.SecretAccessKey = common.AesDecryptECB(disk.DiskS3.SecretAccessKey)
+				s3 := *disk.DiskS3
+				disk.DiskS3 = &s3
+				if err := decode(fmt.Sprintf("disk[%d].accessKeyID", i), &s3.AccessKeyID); err != nil {
+					return err
+				}
+				if err := decode(fmt.Sprintf("disk[%d].secretAccessKey", i), &s3.SecretAccessKey); err != nil {
+					return err
+				}
 			}
-			disks = append(disks, disk)
 		}
-		conf.Storage.Disks = disks
+		conf.Storage = &storage
 	}
-
 	if conf.TlsConf != nil {
-		// key 先保留 AesDecryptECB 的直接输出：AesDecryptECB 解密失败时会通过
-		// defer/recover 把原始密文（大写 hex 字符串）原样吐回来，这本身就是一个
-		// 有辨识度的信号（人眼能看出"这是没解开的密文"）。只有确认 base64 还原出的
-		// 内容像一份 PEM 私钥（包含 "PRIVATE KEY"）时才用它替换 key；否则保留这个
-		// 未经 base64 还原的值,不要用 base64.DecodeString 的"垃圾成功"结果覆盖掉它 ——
-		// 那样反而会把一个有辨识度的信号变成一堆无意义乱码,销毁排障线索。
-		key := common.AesDecryptECB(conf.TlsConf.Key)
-		if key != "" {
-			if raw, err := base64.StdEncoding.DecodeString(key); err == nil && strings.Contains(string(raw), "PRIVATE KEY") {
-				key = string(raw)
+		tls := *conf.TlsConf
+		if err := decode("tlsConf.key", &tls.Key); err != nil {
+			return err
+		}
+		if tls.Key != "" {
+			if raw, err := base64.StdEncoding.DecodeString(tls.Key); err == nil && strings.Contains(string(raw), "PRIVATE KEY") {
+				tls.Key = string(raw)
 			} else {
-				log.Logger.Warnf("cluster[%s] TLS private key decrypt sanity check failed (decrypted/base64-decoded content does not look like a PEM private key); ciphertext may be corrupted or was not produced by EncodePasswd, keeping raw decrypted value for troubleshooting", conf.Cluster)
+				log.Logger.Warnf("cluster[%s] TLS private key decrypt sanity check failed; keeping raw decrypted value", conf.Cluster)
 			}
 		}
-		conf.TlsConf = &model.TlsConf{
-			Cert:       conf.TlsConf.Cert,
-			Key:        key,
-			SelfSigned: conf.TlsConf.SelfSigned,
-		}
+		conf.TlsConf = &tls
 	}
+	return nil
 }

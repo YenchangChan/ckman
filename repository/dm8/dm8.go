@@ -238,7 +238,9 @@ func (mp *DM8Persistent) GetClusterbyName(cluster string) (model.CKManClickHouse
 	if err := json.Unmarshal([]byte(table.Configuration), &conf); err != nil {
 		return model.CKManClickHouseConfig{}, errors.Wrap(err, "")
 	}
-	repository.DecodePasswd(&conf)
+	if err := repository.DecodePasswd(&conf); err != nil {
+		return model.CKManClickHouseConfig{}, err
+	}
 	return conf, nil
 }
 
@@ -264,7 +266,9 @@ func (mp *DM8Persistent) GetAllClusters() (map[string]model.CKManClickHouseConfi
 		if err := json.Unmarshal([]byte(table.Configuration), &conf); err != nil {
 			return nil, errors.Wrap(err, "")
 		}
-		repository.DecodePasswd(&conf)
+		if err := repository.DecodePasswd(&conf); err != nil {
+			return nil, err
+		}
 		clusterMapping[table.ClusterName] = conf
 	}
 	return clusterMapping, nil
@@ -289,7 +293,9 @@ func (mp *DM8Persistent) CreateCluster(conf model.CKManClickHouseConfig) error {
 		//means already exists
 		return repository.ErrRecordExists
 	}
-	repository.EncodePasswd(&conf)
+	if err := repository.EncodePasswd(&conf); err != nil {
+		return err
+	}
 	config, err := json.Marshal(conf)
 	if err != nil {
 		return errors.Wrap(err, "")
@@ -321,7 +327,9 @@ func (mp *DM8Persistent) UpdateCluster(conf model.CKManClickHouseConfig) error {
 		return repository.ErrRecordNotFound
 	}
 
-	repository.EncodePasswd(&conf)
+	if err := repository.EncodePasswd(&conf); err != nil {
+		return err
+	}
 	config, err := json.Marshal(conf)
 	if err != nil {
 		return errors.Wrap(err, "")

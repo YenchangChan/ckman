@@ -292,20 +292,12 @@ func InitCmd() {
 	})
 	_ = rootCmd.Execute()
 	if EncryptPassword != "" {
-		switch EncryptAlgorithm {
-		case common.GosyptAlgorithm:
-			fmt.Println(common.AesEncryptECB(EncryptPassword))
-		case common.GosyptSM4Algorithm:
-			ciphertext, err := common.SM4Encrypt(EncryptPassword)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "encrypt failed: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Println(ciphertext)
-		default:
-			fmt.Fprintf(os.Stderr, "unsupported encryption algorithm %q\n", EncryptAlgorithm)
+		ciphertext, err := common.EncryptSecret(EncryptPassword, EncryptAlgorithm)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "encrypt failed: %v\n", err)
 			os.Exit(1)
 		}
+		fmt.Println(ciphertext)
 		os.Exit(0)
 	}
 	fmt.Println("ckman is used to manager and monitor clickhouse")

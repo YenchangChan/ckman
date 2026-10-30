@@ -23,7 +23,9 @@ func CreateNewTask(clusterName, taskType string, deploy interface{}) (string, er
 	var zknodes []string
 	switch d := deploy.(type) {
 	case *CKDeploy:
-		repository.EncodePasswd(deploy.(*CKDeploy).Conf)
+		if err := repository.EncodePasswd(deploy.(*CKDeploy).Conf); err != nil {
+			return "", err
+		}
 		hosts = d.Conf.Hosts
 		if d.Conf.KeeperWithStanalone() {
 			zknodes = d.Conf.KeeperConf.KeeperNodes

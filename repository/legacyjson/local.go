@@ -110,7 +110,9 @@ func (lp *LocalPersistent) GetClusterbyName(cluster string) (model.CKManClickHou
 	if !ok {
 		return model.CKManClickHouseConfig{}, repository.ErrRecordNotFound
 	}
-	repository.DecodePasswd(&conf)
+	if err := repository.DecodePasswd(&conf); err != nil {
+		return model.CKManClickHouseConfig{}, err
+	}
 	return conf, nil
 }
 
@@ -129,7 +131,9 @@ func (lp *LocalPersistent) GetAllClusters() (map[string]model.CKManClickHouseCon
 	defer lp.lock.RUnlock()
 	clusterMap := make(map[string]model.CKManClickHouseConfig)
 	for key, value := range lp.Data.Clusters {
-		repository.DecodePasswd(&value)
+		if err := repository.DecodePasswd(&value); err != nil {
+			return nil, err
+		}
 		clusterMap[key] = value
 	}
 	return clusterMap, nil
@@ -148,7 +152,9 @@ func (lp *LocalPersistent) GetAllLogicClusters() (map[string][]string, error) {
 func (lp *LocalPersistent) CreateCluster(conf model.CKManClickHouseConfig) error {
 	lp.lock.Lock()
 	defer lp.lock.Unlock()
-	repository.EncodePasswd(&conf)
+	if err := repository.EncodePasswd(&conf); err != nil {
+		return err
+	}
 	if _, ok := lp.Data.Clusters[conf.Cluster]; ok {
 		return repository.ErrRecordExists
 	}
@@ -175,7 +181,9 @@ func (lp *LocalPersistent) CreateLogicCluster(logic string, physics []string) er
 func (lp *LocalPersistent) UpdateCluster(conf model.CKManClickHouseConfig) error {
 	lp.lock.Lock()
 	defer lp.lock.Unlock()
-	repository.EncodePasswd(&conf)
+	if err := repository.EncodePasswd(&conf); err != nil {
+		return err
+	}
 	if _, ok := lp.Data.Clusters[conf.Cluster]; !ok {
 		return repository.ErrRecordNotFound
 	}

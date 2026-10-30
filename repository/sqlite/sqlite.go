@@ -153,7 +153,6 @@ func writeMeta(db *gorm.DB, key, value string) error {
 	return nil
 }
 
-
 // ─── Cluster ──────────────────────────────────────────────────────────────────
 
 func (sp *SQLitePersistent) ClusterExists(cluster string) bool {
@@ -170,7 +169,9 @@ func (sp *SQLitePersistent) GetClusterbyName(cluster string) (model.CKManClickHo
 	if err := json.Unmarshal([]byte(tbl.Config), &conf); err != nil {
 		return model.CKManClickHouseConfig{}, errors.Wrap(err, "")
 	}
-	repository.DecodePasswd(&conf)
+	if err := repository.DecodePasswd(&conf); err != nil {
+		return model.CKManClickHouseConfig{}, err
+	}
 	return conf, nil
 }
 
@@ -185,14 +186,18 @@ func (sp *SQLitePersistent) GetAllClusters() (map[string]model.CKManClickHouseCo
 		if err := json.Unmarshal([]byte(tbl.Config), &conf); err != nil {
 			return nil, errors.Wrap(err, "")
 		}
-		repository.DecodePasswd(&conf)
+		if err := repository.DecodePasswd(&conf); err != nil {
+			return nil, err
+		}
 		out[conf.Cluster] = conf
 	}
 	return out, nil
 }
 
 func (sp *SQLitePersistent) CreateCluster(conf model.CKManClickHouseConfig) error {
-	repository.EncodePasswd(&conf)
+	if err := repository.EncodePasswd(&conf); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(conf)
 	if err != nil {
 		return errors.Wrap(err, "")
@@ -209,7 +214,9 @@ func (sp *SQLitePersistent) CreateCluster(conf model.CKManClickHouseConfig) erro
 }
 
 func (sp *SQLitePersistent) UpdateCluster(conf model.CKManClickHouseConfig) error {
-	repository.EncodePasswd(&conf)
+	if err := repository.EncodePasswd(&conf); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(conf)
 	if err != nil {
 		return errors.Wrap(err, "")

@@ -17,6 +17,7 @@ import (
 	"github.com/housepower/ckman/cmd/dumpjson"
 	"github.com/housepower/ckman/cmd/metacache"
 	"github.com/housepower/ckman/cmd/migrate"
+	"github.com/housepower/ckman/cmd/secretmigration"
 	"github.com/housepower/ckman/cmd/sqlcli"
 	"github.com/housepower/ckman/cmd/upgrade"
 	"github.com/housepower/ckman/cmd/znodes"
@@ -69,13 +70,16 @@ var (
 	sm_conf        = s_metacacheCmd.Flag("conf", "config file path").Short('c').Default("/etc/ckman/conf/ckman.hjson").String()
 	sm_dryrun      = s_metacacheCmd.Flag("dryrun", "dryrun").Short('d').Bool()
 
-	upgradeCmd = kingpin.Command("upgrade", "upgrade options")
-	u_backup   = upgradeCmd.Command("backup", "upgrade legacy Backup table to new BackupPolicy/BackupRun schema")
-	ub_conf    = u_backup.Flag("conf", "ckman config file path").Short('c').Default("/etc/ckman/conf/ckman.hjson").String()
-	ub_dryrun  = u_backup.Flag("dry-run", "print mapping plan without writing").Bool()
-	ub_verbose = u_backup.Flag("verbose", "verbose log per row").Short('v').Bool()
-	ub_force   = u_backup.Flag("force", "allow writing even if new tables non-empty").Bool()
-	ub_cleanup = u_backup.Flag("cleanup", "delete migrated rows from old Backup table after success").Bool()
+	upgradeCmd   = kingpin.Command("upgrade", "upgrade options")
+	u_backup     = upgradeCmd.Command("backup", "upgrade legacy Backup table to new BackupPolicy/BackupRun schema")
+	ub_conf      = u_backup.Flag("conf", "ckman config file path").Short('c').Default("/etc/ckman/conf/ckman.hjson").String()
+	ub_dryrun    = u_backup.Flag("dry-run", "print mapping plan without writing").Bool()
+	ub_verbose   = u_backup.Flag("verbose", "verbose log per row").Short('v').Bool()
+	ub_force     = u_backup.Flag("force", "allow writing even if new tables non-empty").Bool()
+	ub_cleanup   = u_backup.Flag("cleanup", "delete migrated rows from old Backup table after success").Bool()
+	u_encryption = upgradeCmd.Command("encryption", "rewrite cluster secrets using SM4")
+	ue_conf      = u_encryption.Flag("conf", "ckman config file path").Short('c').Default("/etc/ckman/conf/ckman.hjson").String()
+	ue_dryrun    = u_encryption.Flag("dry-run", "validate secrets and count clusters without writing").Bool()
 )
 
 func main() {
@@ -130,6 +134,17 @@ func main() {
 				Force:      *ub_force,
 				Cleanup:    *ub_cleanup,
 			})
+		case "encryption":
+			count, err := secretmigration.Run(*ue_conf, *ue_dryrun)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "encryption migration failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Validated %d clusters", count)
+			if !*ue_dryrun {
+				fmt.Print("; rewritten with SM4")
+			}
+			fmt.Println()
 		}
 	case "sql":
 		runSQLCmd(*sql_conf, *sql_query, *sql_format, *sql_vertical, *sql_notrunc)

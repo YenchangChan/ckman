@@ -26,12 +26,12 @@ func TestEncodeDecodeTlsKey(t *testing.T) {
 		TlsConf:  &model.TlsConf{Cert: "CERT-PEM", Key: plain, SelfSigned: true},
 	}
 
-	EncodePasswd(&conf)
+	assert.NoError(t, EncodePasswd(&conf))
 	assert.NotEqual(t, plain, conf.TlsConf.Key)
 	// 证书是公开信息，不加密
 	assert.Equal(t, "CERT-PEM", conf.TlsConf.Cert)
 
-	DecodePasswd(&conf)
+	assert.NoError(t, DecodePasswd(&conf))
 	assert.Equal(t, plain, conf.TlsConf.Key)
 	assert.True(t, conf.TlsConf.SelfSigned)
 }
@@ -41,33 +41,28 @@ func TestDecodeTlsKeyNotMutateShared(t *testing.T) {
 	shared := &model.TlsConf{Cert: "CERT-PEM", Key: plain}
 	conf := model.CKManClickHouseConfig{TlsConf: shared}
 
-	EncodePasswd(&conf)
+	assert.NoError(t, EncodePasswd(&conf))
 	// EncodePasswd 不得改到调用方持有的那个对象
 	assert.Equal(t, plain, shared.Key)
 }
 
 func TestEncodeDecodeTlsConfNil(t *testing.T) {
 	conf := model.CKManClickHouseConfig{Password: "123456"}
-	EncodePasswd(&conf)
+	assert.NoError(t, EncodePasswd(&conf))
 	assert.Nil(t, conf.TlsConf)
-	DecodePasswd(&conf)
+	assert.NoError(t, DecodePasswd(&conf))
 	assert.Nil(t, conf.TlsConf)
 }
 
-// TestDecodeTlsKeyCorruptCiphertext_NoPanic：密文损坏 / 压根不是密文的垃圾值
-// （既不是合法 hex，也不是合法 base64）。DecodePasswd 不应 panic，Key 应保留
-// common.AesDecryptECB 的原始输出——对无法解出的密文，这份原样返回的 hex/原文
-// 比任何“看似成功”的进一步转换更有辨识度，方便管理员排障。
+// 损坏的密文必须返回错误，避免原始密文被误用为私钥。
 func TestDecodeTlsKeyCorruptCiphertext_NoPanic(t *testing.T) {
 	garbage := "not-a-valid-ciphertext!!"
 	conf := model.CKManClickHouseConfig{
 		TlsConf: &model.TlsConf{Cert: "CERT-PEM", Key: garbage},
 	}
 
-	assert.NotPanics(t, func() {
-		DecodePasswd(&conf)
-	})
-	assert.Equal(t, common.AesDecryptECB(garbage), conf.TlsConf.Key)
+	assert.Error(t, DecodePasswd(&conf))
+	assert.Equal(t, garbage, conf.TlsConf.Key)
 }
 
 // TestDecodeTlsKeyInvalidContent_KeepsRawForDiagnostics：密文本身合法（能被
@@ -84,9 +79,7 @@ func TestDecodeTlsKeyInvalidContent_KeepsRawForDiagnostics(t *testing.T) {
 		TlsConf: &model.TlsConf{Cert: "CERT-PEM", Key: cipher},
 	}
 
-	assert.NotPanics(t, func() {
-		DecodePasswd(&conf)
-	})
+	assert.NoError(t, DecodePasswd(&conf))
 	assert.Equal(t, common.AesDecryptECB(cipher), conf.TlsConf.Key)
 	assert.NotEqual(t, notAKey, conf.TlsConf.Key)
 }

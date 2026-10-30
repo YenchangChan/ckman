@@ -34,6 +34,7 @@ ckmanctl --help
 | `cleanup znodes queue` | 清理副本表的复制队列 |
 | `set metacache` | 重建集群的 metacache |
 | `upgrade backup` | 升级旧 Backup 表到新 BackupPolicy / BackupRun schema |
+| `upgrade encryption` | 把集群配置中的密码重写为 SM4 密文 |
 
 每个子命令都支持 `--help`：
 
@@ -312,6 +313,19 @@ ckmanctl set metacache test_cluster -d
 - metacache 损坏导致 Web 界面表信息错乱
 
 ---
+
+## upgrade encryption
+
+将集群配置中的密码、SSH 密码、用户密码、S3 密钥和 TLS 私钥统一重写为 SM4-GCM 密文。旧 AES 密文没有前缀，新密文使用 `sm4:gcm:v1:` 前缀；读取时按密文识别算法。此命令不修改 `ckman.hjson` 中的 `ENC(...)` 值，需要时用 `ckman --encrypt-algorithm SM4 --encrypt '密码'` 生成并替换。
+
+先备份持久层，停止所有 ckman 写入实例，在配置文件中设 `encrypt_algorithm: SM4`，并为 `ckmanctl` 设置与 ckman 相同的 `CKMAN_SM4_KEY`。然后执行：
+
+```bash
+ckmanctl upgrade encryption -c /etc/ckman/conf/ckman.hjson --dry-run
+ckmanctl upgrade encryption -c /etc/ckman/conf/ckman.hjson
+```
+
+演练会解密并检查所有集群，不会写入。正式运行在一个持久层事务中重写所有集群；任何集群失败则回滚。迁移期间必须停止 ckman 写入，以免并发更新被覆盖。运行完毕后启动 ckman。
 
 ## upgrade backup
 

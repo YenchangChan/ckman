@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/housepower/ckman/common"
+	"github.com/housepower/ckman/config"
 	"github.com/housepower/ckman/log"
 	"github.com/housepower/ckman/model"
 	"github.com/housepower/ckman/repository"
@@ -44,10 +45,10 @@ func envInt(k string, def int) int {
 
 // backendCase 描述一个待测后端:如何造新实例、连接配置、是否配置齐全。
 type backendCase struct {
-	name string
+	name  string
 	newFn func() repository.PersistentMgr
-	cfg  interface{}
-	ok   bool
+	cfg   interface{}
+	ok    bool
 }
 
 func mysqlCase() backendCase {
@@ -124,6 +125,7 @@ func runBackend(t *testing.T, bc backendCase) {
 
 	t.Run("cluster_crud", func(t *testing.T) { testClusterCRUD(t, mgr) })
 	t.Run("cluster_tls_conf", func(t *testing.T) { testClusterTLSConf(t, mgr) })
+	t.Run("cluster_sm4", func(t *testing.T) { testClusterSM4(t, mgr) })
 	t.Run("backup_policy_crud", func(t *testing.T) { testPolicyCRUD(t, mgr) })
 	t.Run("backup_run_zero_time", func(t *testing.T) { testBackupRunZeroTime(t, mgr) })
 	t.Run("user_crud", func(t *testing.T) { testUserCRUD(t, mgr) })
@@ -132,6 +134,36 @@ func runBackend(t *testing.T, bc backendCase) {
 }
 
 const tagPrefix = "dbtest_"
+
+func testClusterSM4(t *testing.T, mgr repository.PersistentMgr) {
+	name := tagPrefix + "sm4"
+	_ = mgr.DeleteCluster(name)
+	defer mgr.DeleteCluster(name)
+	previous := config.GlobalConfig.EncryptAlgorithm
+	t.Cleanup(func() { config.GlobalConfig.EncryptAlgorithm = previous })
+	t.Setenv(common.SM4KeyEnv, "0123456789abcdef")
+	config.GlobalConfig.EncryptAlgorithm = common.GosyptAlgorithm
+	requireNoError := func(err error) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	requireNoError(mgr.CreateCluster(model.CKManClickHouseConfig{Cluster: name, Password: "old-aes", SshPassword: "old-ssh"}))
+	config.GlobalConfig.EncryptAlgorithm = common.GosyptSM4Algorithm
+	got, err := mgr.GetClusterbyName(name)
+	requireNoError(err)
+	if got.Password != "old-aes" {
+		t.Fatalf("AES read under SM4 mode: %q", got.Password)
+	}
+	got.Password = "new-sm4"
+	requireNoError(mgr.UpdateCluster(got))
+	config.GlobalConfig.EncryptAlgorithm = common.GosyptAlgorithm
+	got, err = mgr.GetClusterbyName(name)
+	requireNoError(err)
+	if got.Password != "new-sm4" || got.SshPassword != "old-ssh" {
+		t.Fatalf("mixed-mode read: password=%q ssh=%q", got.Password, got.SshPassword)
+	}
+}
 
 func testClusterCRUD(t *testing.T, mgr repository.PersistentMgr) {
 	name := tagPrefix + "cluster"

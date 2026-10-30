@@ -224,7 +224,9 @@ func (mp *PostgresPersistent) GetClusterbyName(cluster string) (model.CKManClick
 	if err := json.Unmarshal([]byte(table.Config), &conf); err != nil {
 		return model.CKManClickHouseConfig{}, err
 	}
-	repository.DecodePasswd(&conf)
+	if err := repository.DecodePasswd(&conf); err != nil {
+		return model.CKManClickHouseConfig{}, err
+	}
 	return conf, nil
 }
 
@@ -250,7 +252,9 @@ func (mp *PostgresPersistent) GetAllClusters() (map[string]model.CKManClickHouse
 		if err := json.Unmarshal([]byte(table.Config), &conf); err != nil {
 			return nil, errors.Wrap(err, "")
 		}
-		repository.DecodePasswd(&conf)
+		if err := repository.DecodePasswd(&conf); err != nil {
+			return nil, err
+		}
 		clusterMapping[table.ClusterName] = conf
 	}
 	return clusterMapping, nil
@@ -275,7 +279,9 @@ func (mp *PostgresPersistent) CreateCluster(conf model.CKManClickHouseConfig) er
 		//means already exists
 		return repository.ErrRecordExists
 	}
-	repository.EncodePasswd(&conf)
+	if err := repository.EncodePasswd(&conf); err != nil {
+		return err
+	}
 	config, err := json.Marshal(conf)
 	if err != nil {
 		return errors.Wrap(err, "")
@@ -307,7 +313,9 @@ func (mp *PostgresPersistent) UpdateCluster(conf model.CKManClickHouseConfig) er
 		return repository.ErrRecordNotFound
 	}
 
-	repository.EncodePasswd(&conf)
+	if err := repository.EncodePasswd(&conf); err != nil {
+		return err
+	}
 	config, err := json.Marshal(conf)
 	if err != nil {
 		return errors.Wrap(err, "")

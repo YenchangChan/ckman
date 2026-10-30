@@ -53,7 +53,9 @@ func UnmarshalConfig(config interface{}, v interface{}) error {
 	}
 	switch v := v.(type) {
 	case *deploy.CKDeploy:
-		repository.DecodePasswd(v.Conf)
+		if err := repository.DecodePasswd(v.Conf); err != nil {
+			return err
+		}
 	case *model.ArchiveTableReq:
 	case *model.RebalanceTableReq:
 	}
