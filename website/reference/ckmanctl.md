@@ -318,7 +318,7 @@ ckmanctl set metacache test_cluster -d
 
 将集群配置中的密码、SSH 密码、用户密码、S3 密钥和 TLS 私钥统一重写为 SM4-GCM 密文。旧 AES 密文没有前缀，新密文使用 `sm4:gcm:v1:` 前缀；读取时按密文识别算法。此命令不修改 `ckman.hjson` 中的 `ENC(...)` 值，需要时用 `ckman --encrypt-algorithm SM4 --encrypt '密码'` 生成并替换。
 
-先备份持久层，停止所有 ckman 写入实例，在配置文件中设 `encrypt_algorithm: SM4`，并在配置文件同目录的 `.ckman.env` 中设置 `CKMAN_SM4_KEY`（或为进程设置同名环境变量）。ckman 和 ckmanctl 会读取同一个文件，已有的进程环境变量优先。systemd 服务以 `ckman` 用户运行，因此该用户必须能读取 `.ckman.env`；建议文件归 `ckman` 用户所有，权限设为 `0600`。然后执行：
+先备份持久层，停止所有 ckman 写入实例，在主配置文件顶层设 `encrypt_algorithm: SM4`，并在配置文件同目录的 `.ckman.env` 中设置 `CKMAN_SM4_KEY`（或为进程设置同名环境变量）。例如 `-c /etc/ckman/conf/ckman.hjson` 对应 `/etc/ckman/conf/.ckman.env`。ckman 和 ckmanctl 会读取同一个文件，已有的进程环境变量优先。systemd 服务以 `ckman` 用户运行，因此该用户必须能读取 `.ckman.env`；建议文件归 `ckman` 用户所有，权限设为 `0600`。然后执行：
 
 ```bash
 ckmanctl upgrade encryption -c /etc/ckman/conf/ckman.hjson --dry-run

@@ -23,6 +23,7 @@ ckman -c /path/to/ckman.hjson
 
 ```hjson
 {
+  "encrypt_algorithm": "AESWITHHEXANDBASE64", // 新写入密文的算法，可设为 SM4
   "server":            { ... },   // HTTP 服务、鉴权、metrics
   "clickhouse":        { ... },   // ClickHouse 连接池
   "log":               { ... },   // 日志级别与切割
@@ -53,20 +54,30 @@ password: ENC(E310E892E56801CED9ED98AA177F18E6)
 
 未包裹则视为明文。
 
-默认算法为 `AESWITHHEXANDBASE64`，原有配置无需修改。需要使用 SM4 时，在主配置顶层设置 `encrypt_algorithm: SM4`，并为 CKMAN 进程设置 `CKMAN_SM4_KEY` 环境变量。密钥支持 16 字节原文，或 32 位十六进制（对应 16 字节密钥）：
+默认算法为 `AESWITHHEXANDBASE64`。需要使用 SM4 时，在主配置**顶层**设置 `encrypt_algorithm: SM4`：
 
-```bash
-export CKMAN_SM4_KEY='31323334353637383930616263646566'
-ckman --encrypt-algorithm SM4 --encrypt '123456'
+```hjson
+{
+  "encrypt_algorithm": "SM4",
+  "server": { ... }
+}
 ```
 
-原 `common/sm4.go` 中的密钥包含 `0x00`，无法直接作为环境变量原文传入。若要使用这份原密钥，可设置：
+CKMAN 默认从**所选主配置文件的同一目录**读取 `.ckman.env`。tar.gz 安装对应 `<工作目录>/conf/.ckman.env`；RPM 安装对应 `/etc/ckman/conf/.ckman.env`。文件内容为：
 
-```bash
-export CKMAN_SM4_KEY='6368656e79616e6368616e6702000205'
+```dotenv
+CKMAN_SM4_KEY=<16字节原文或32位十六进制密钥>
 ```
 
-把输出的密文写为 `ENC(密文)`。SM4 使用随机 nonce，同一明文每次生成的密文不同。切换算法前，需将配置文件中原有的 `ENC(...)` 值重新加密；算法字段作用于整份配置文件，不能混用 AES 和 SM4 密文。密钥缺失、长度错误或 SM4 密文无法解密时，启动会报错。
+`.ckman.env` 不存在时继续使用进程环境变量；如果两处都设置，**进程环境变量优先**。服务以 `ckman` 用户运行时，该用户需要能读取文件。建议文件归 `ckman` 用户所有，权限设为 `0600`。文件存在但无法读取或解析时，启动会报错。终端中的 `export CKMAN_SM4_KEY=...` 不会传给通过 `systemctl restart` 启动的服务；使用 `.ckman.env` 即可避免额外修改 systemd 单元。
+
+生成配置文件中的 SM4 密文时，指定相同的主配置路径，让命令读取同目录的 `.ckman.env`：
+
+```bash
+ckman -c /etc/ckman/conf/ckman.hjson --encrypt-algorithm SM4 --encrypt '123456'
+```
+
+把输出写为 `ENC(密文)`。新 SM4 密文以 `sm4:gcm:v1:` 开头，使用随机 nonce，同一明文每次生成的密文不同。`encrypt_algorithm` 决定**新写入**的算法；读取时按密文识别算法。原有无前缀的 AES `ENC(...)` 和集群密码仍可读取，无需在切换配置项前全部替换。要把存量集群密码统一转为 SM4，请使用 [`ckmanctl upgrade encryption`](/reference/ckmanctl#upgrade-encryption)；配置文件中的旧 `ENC(...)` 需按需手动替换。密钥缺失、长度错误或 SM4 密文无法解密时，启动会报错。
 
 ## 完整示例
 
@@ -75,6 +86,7 @@ export CKMAN_SM4_KEY='6368656e79616e6368616e6702000205'
 // 密码可使用 ENC(密文)，密文通过 ./ckman --encrypt 明文 获取
 
 {
+  "encrypt_algorithm": "AESWITHHEXANDBASE64",
   "server": {
     "port": 8808,
     "https": false,
@@ -137,6 +149,7 @@ export CKMAN_SM4_KEY='6368656e79616e6368616e6702000205'
 | `log.level` | 否（动态生效） |
 | `cron.*` | 是 |
 | `persistent_config`, `persistent_policy` | 是 |
+| `encrypt_algorithm`, `.ckman.env` | 是 |
 | `registry`, `config_center`, `nacos.*`, `consul.*`, `apollo.*` | 是 |
 
 ::: tip 用户密码

@@ -26,6 +26,13 @@
 - 看 `/var/log/ckman/ckman.log` 是否有 schema 不匹配错误
 - 持久层数据库连接是否正常
 
+### Q：设置 `encrypt_algorithm: SM4` 后服务起不来
+
+1. 运行 `journalctl -u ckman -b -n 80 --no-pager`，查看具体加解密错误。
+2. 确认 `/etc/ckman/conf/.ckman.env` 中有 `CKMAN_SM4_KEY`，值为 16 字节原文或 32 位十六进制密钥。文件应归 `ckman` 用户所有，权限建议为 `0600`。
+3. 使用 `systemctl restart ckman` 时，在当前终端执行 `export CKMAN_SM4_KEY=...` 不会让 systemd 服务继承这个变量；使用 `.ckman.env`，或在服务配置中设置环境变量。
+4. 如果密钥正确但仍提示无法解密，检查使用的 ckman 二进制是否包含 SM4 支持，以及密文是否由同一密钥生成。不要把密钥内容贴进日志或排障记录。
+
 ## 集群部署
 
 ### Q：部署集群时 SSH 失败（5100）
