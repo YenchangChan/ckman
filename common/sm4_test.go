@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGenerateSM4KeyHex(t *testing.T) {
-	first, err := GenerateSM4KeyHex()
+func TestGenerateSM4KeyBase64(t *testing.T) {
+	first, err := GenerateSM4KeyBase64()
 	require.NoError(t, err)
-	second, err := GenerateSM4KeyHex()
+	second, err := GenerateSM4KeyBase64()
 	require.NoError(t, err)
 	require.NotEqual(t, first, second)
-	require.Len(t, first, 32)
-	key, err := hex.DecodeString(first)
+	require.Len(t, first, 24)
+	key, err := base64.StdEncoding.DecodeString(first)
 	require.NoError(t, err)
 	require.Len(t, key, 16)
 }
@@ -26,7 +26,14 @@ func TestSM4ExistingKeyRepresentations(t *testing.T) {
 	key := []byte{'a', 'b', 'c', 'd', 0, 1, 2, 3, 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'}
 	path := filepath.Join(t.TempDir(), "sm4.key")
 	require.NoError(t, os.WriteFile(path, key, 0600))
-	for _, value := range []string{"hex:" + hex.EncodeToString(key), hex.EncodeToString(key), "base64:" + base64.StdEncoding.EncodeToString(key)} {
+	for _, value := range []string{
+		base64.StdEncoding.EncodeToString(key),
+		base64.RawStdEncoding.EncodeToString(key),
+		base64.URLEncoding.EncodeToString(key),
+		"base64:" + base64.StdEncoding.EncodeToString(key),
+		"hex:" + hex.EncodeToString(key),
+		hex.EncodeToString(key),
+	} {
 		t.Setenv(SM4KeyEnv, value)
 		got, err := sm4Key()
 		require.NoError(t, err)
@@ -39,7 +46,7 @@ func TestSM4ExistingKeyRepresentations(t *testing.T) {
 	require.Equal(t, key, got)
 	ciphertext, err := SM4Encrypt("existing-key")
 	require.NoError(t, err)
-	t.Setenv(SM4KeyEnv, "base64:"+base64.StdEncoding.EncodeToString(key))
+	t.Setenv(SM4KeyEnv, base64.StdEncoding.EncodeToString(key))
 	plain, err := SM4Decrypt(ciphertext)
 	require.NoError(t, err)
 	require.Equal(t, "existing-key", plain)

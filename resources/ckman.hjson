@@ -8,7 +8,8 @@
   // 新写入密文的算法，默认 AESWITHHEXANDBASE64，兼容已有配置。
   // 使用 SM4-GCM 时，在本配置文件同目录的 .ckman.env 中设置密钥：
   // 首次配置可运行 ckmanctl keygen sm4，将输出保存到本文件同目录的 .ckman.env。
-  // 已有密钥可设置 CKMAN_SM4_KEY=<16字节原文、32位hex、hex:<hex> 或 base64:<base64>>。
+  // CKMAN_SM4_KEY 默认直接填写 Base64 字符串，解码后必须恰好16字节。
+  // 旧的16字节原文和32位hex表示仍可读取，避免存量密文失效。
   // 已有16字节二进制密钥文件可设置 CKMAN_SM4_KEY_FILE=<绝对路径>。
   // 已有 SM4 数据时不要重新生成密钥。
   // 也可以通过进程环境变量设置；进程环境变量优先于 .ckman.env。

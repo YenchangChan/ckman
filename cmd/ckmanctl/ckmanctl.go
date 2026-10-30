@@ -83,14 +83,14 @@ var (
 	ue_dryrun    = u_encryption.Flag("dry-run", "validate secrets and count clusters without writing").Bool()
 
 	keygenCmd = kingpin.Command("keygen", "generate encryption keys")
-	_         = keygenCmd.Command("sm4", "print a new CKMAN_SM4_KEY assignment")
+	_         = keygenCmd.Command("sm4", "print a new Base64 CKMAN_SM4_KEY assignment")
 )
 
 func main() {
 	command := kingpin.Parse()
 	firstCmd := strings.Split(command, " ")[0]
 	if firstCmd == "keygen" {
-		key, err := common.GenerateSM4KeyHex()
+		key, err := common.GenerateSM4KeyBase64()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "generate SM4 key failed: %v\n", err)
 			os.Exit(1)

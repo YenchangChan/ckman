@@ -317,7 +317,7 @@ ckmanctl set metacache test_cluster -d
 
 ## keygen sm4
 
-用 Go 的安全随机数生成器生成 16 字节 SM4 密钥，输出一行 `CKMAN_SM4_KEY=<32位十六进制密钥>`，无需 OpenSSL。只在**首次配置**时运行；已有 SM4 密文时，应继续使用原密钥。RPM 安装写入文件的完整命令见[配置总览](/config/overview#密码加密)。
+用 Go 的安全随机数生成器生成 16 字节 SM4 密钥，输出一行 `CKMAN_SM4_KEY=<Base64字符串>`，无需 OpenSSL。只在**首次配置**时运行；已有 SM4 密文时，应继续使用原密钥。RPM 安装写入文件的完整命令见[配置总览](/config/overview#密码加密)。
 
 ```bash
 ckmanctl keygen sm4
