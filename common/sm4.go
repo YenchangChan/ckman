@@ -25,7 +25,7 @@ func sm4Key() ([]byte, error) {
 	if len(value) == 16 {
 		return []byte(value), nil
 	}
-	return nil, fmt.Errorf("%s must be 16 raw bytes or 32 hexadecimal characters", SM4KeyEnv)
+	return nil, fmt.Errorf("%s must be 16 raw bytes or 32 hexadecimal characters (generate a hex key with: openssl rand -hex 16)", SM4KeyEnv)
 }
 
 func SM4Encrypt(data string) (string, error) {

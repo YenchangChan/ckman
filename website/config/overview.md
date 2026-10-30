@@ -63,7 +63,22 @@ password: ENC(E310E892E56801CED9ED98AA177F18E6)
 }
 ```
 
-CKMAN 默认从**所选主配置文件的同一目录**读取 `.ckman.env`。tar.gz 安装对应 `<工作目录>/conf/.ckman.env`；RPM 安装对应 `/etc/ckman/conf/.ckman.env`。文件内容为：
+CKMAN 默认从**所选主配置文件的同一目录**读取 `.ckman.env`。tar.gz 安装对应 `<工作目录>/conf/.ckman.env`；RPM 安装对应 `/etc/ckman/conf/.ckman.env`。推荐使用 32 位十六进制格式：`openssl rand -hex 16` 会生成 16 字节随机密钥，并输出为 32 个十六进制字符。
+
+RPM 安装首次启用 SM4 时，可执行以下命令创建密钥文件（文件已存在时不会覆盖）：
+
+```bash
+(
+  set -eC
+  umask 077
+  sm4_key_hex=$(openssl rand -hex 16)
+  printf 'CKMAN_SM4_KEY=%s\n' "$sm4_key_hex" > /etc/ckman/conf/.ckman.env
+  chown ckman:ckman /etc/ckman/conf/.ckman.env
+  chmod 600 /etc/ckman/conf/.ckman.env
+)
+```
+
+已有 SM4 密文时，**不要重新生成或覆盖原密钥**，否则现有密文无法解密。手动创建文件时也可以使用 16 字节原文；推荐使用上述十六进制格式。文件内容为：
 
 ```dotenv
 CKMAN_SM4_KEY=<16字节原文或32位十六进制密钥>
