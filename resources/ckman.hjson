@@ -7,8 +7,10 @@
 {
   // 新写入密文的算法，默认 AESWITHHEXANDBASE64，兼容已有配置。
   // 使用 SM4-GCM 时，在本配置文件同目录的 .ckman.env 中设置密钥：
-  // CKMAN_SM4_KEY=<16字节原始密钥或32位十六进制密钥>
-  // 首次配置时可用 openssl rand -hex 16 生成32位十六进制密钥；已有 SM4 数据时不要重新生成。
+  // 首次配置可运行 ckmanctl keygen sm4，将输出保存到本文件同目录的 .ckman.env。
+  // 已有密钥可设置 CKMAN_SM4_KEY=<16字节原文、32位hex、hex:<hex> 或 base64:<base64>>。
+  // 已有16字节二进制密钥文件可设置 CKMAN_SM4_KEY_FILE=<绝对路径>。
+  // 已有 SM4 数据时不要重新生成密钥。
   // 也可以通过进程环境变量设置；进程环境变量优先于 .ckman.env。
   // 再执行：./ckman --encrypt-algorithm SM4 --encrypt '明文密码'
   // 把输出写成 ENC(密文)。新 SM4 密文带 sm4:gcm:v1: 前缀；旧 AES 的 ENC() 值仍可读取。

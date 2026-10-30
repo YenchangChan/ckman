@@ -35,6 +35,7 @@ ckmanctl --help
 | `set metacache` | 重建集群的 metacache |
 | `upgrade backup` | 升级旧 Backup 表到新 BackupPolicy / BackupRun schema |
 | `upgrade encryption` | 把集群配置中的密码重写为 SM4 密文 |
+| `keygen sm4` | 生成 16 字节 SM4 密钥并输出 `.env` 格式 |
 
 每个子命令都支持 `--help`：
 
@@ -313,6 +314,14 @@ ckmanctl set metacache test_cluster -d
 - metacache 损坏导致 Web 界面表信息错乱
 
 ---
+
+## keygen sm4
+
+用 Go 的安全随机数生成器生成 16 字节 SM4 密钥，输出一行 `CKMAN_SM4_KEY=<32位十六进制密钥>`，无需 OpenSSL。只在**首次配置**时运行；已有 SM4 密文时，应继续使用原密钥。RPM 安装写入文件的完整命令见[配置总览](/config/overview#密码加密)。
+
+```bash
+ckmanctl keygen sm4
+```
 
 ## upgrade encryption
 

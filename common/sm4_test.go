@@ -1,10 +1,56 @@
 package common
 
 import (
+	"encoding/base64"
+	"encoding/hex"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestGenerateSM4KeyHex(t *testing.T) {
+	first, err := GenerateSM4KeyHex()
+	require.NoError(t, err)
+	second, err := GenerateSM4KeyHex()
+	require.NoError(t, err)
+	require.NotEqual(t, first, second)
+	require.Len(t, first, 32)
+	key, err := hex.DecodeString(first)
+	require.NoError(t, err)
+	require.Len(t, key, 16)
+}
+
+func TestSM4ExistingKeyRepresentations(t *testing.T) {
+	key := []byte{'a', 'b', 'c', 'd', 0, 1, 2, 3, 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'}
+	path := filepath.Join(t.TempDir(), "sm4.key")
+	require.NoError(t, os.WriteFile(path, key, 0600))
+	for _, value := range []string{"hex:" + hex.EncodeToString(key), hex.EncodeToString(key), "base64:" + base64.StdEncoding.EncodeToString(key)} {
+		t.Setenv(SM4KeyEnv, value)
+		got, err := sm4Key()
+		require.NoError(t, err)
+		require.Equal(t, key, got)
+	}
+	t.Setenv(SM4KeyEnv, "")
+	t.Setenv(SM4KeyFileEnv, path)
+	got, err := sm4Key()
+	require.NoError(t, err)
+	require.Equal(t, key, got)
+	ciphertext, err := SM4Encrypt("existing-key")
+	require.NoError(t, err)
+	t.Setenv(SM4KeyEnv, "base64:"+base64.StdEncoding.EncodeToString(key))
+	plain, err := SM4Decrypt(ciphertext)
+	require.NoError(t, err)
+	require.Equal(t, "existing-key", plain)
+	t.Setenv(SM4KeyEnv, "base64:invalid")
+	_, err = sm4Key()
+	require.Error(t, err)
+	t.Setenv(SM4KeyEnv, "hex:123456789012")
+	got, err = sm4Key()
+	require.NoError(t, err)
+	require.Equal(t, []byte("hex:123456789012"), got)
+}
 
 func TestSM4OriginalKeyFromHexEnv(t *testing.T) {
 	t.Setenv(SM4KeyEnv, "6368656e79616e6368616e6702000205")

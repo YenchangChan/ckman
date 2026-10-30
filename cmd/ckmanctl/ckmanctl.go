@@ -21,6 +21,7 @@ import (
 	"github.com/housepower/ckman/cmd/sqlcli"
 	"github.com/housepower/ckman/cmd/upgrade"
 	"github.com/housepower/ckman/cmd/znodes"
+	"github.com/housepower/ckman/common"
 	"github.com/housepower/ckman/config"
 	"github.com/housepower/ckman/log"
 	"github.com/housepower/ckman/repository/sqlite"
@@ -80,12 +81,24 @@ var (
 	u_encryption = upgradeCmd.Command("encryption", "rewrite cluster secrets using SM4")
 	ue_conf      = u_encryption.Flag("conf", "ckman config file path").Short('c').Default("/etc/ckman/conf/ckman.hjson").String()
 	ue_dryrun    = u_encryption.Flag("dry-run", "validate secrets and count clusters without writing").Bool()
+
+	keygenCmd = kingpin.Command("keygen", "generate encryption keys")
+	_         = keygenCmd.Command("sm4", "print a new CKMAN_SM4_KEY assignment")
 )
 
 func main() {
-	log.InitLoggerDefault("debug", []string{"/var/log/ckmanctl.log"})
 	command := kingpin.Parse()
 	firstCmd := strings.Split(command, " ")[0]
+	if firstCmd == "keygen" {
+		key, err := common.GenerateSM4KeyHex()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "generate SM4 key failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("%s=%s\n", common.SM4KeyEnv, key)
+		return
+	}
+	log.InitLoggerDefault("debug", []string{"/var/log/ckmanctl.log"})
 	switch firstCmd {
 	case "migrate":
 		migrate.MigrateHandle(*m_conf)
