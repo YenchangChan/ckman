@@ -327,14 +327,57 @@ ckmanctl keygen sm4
 
 将集群配置中的密码、SSH 密码、用户密码、S3 密钥和 TLS 私钥统一重写为 SM4-GCM 密文。旧 AES 密文没有前缀，新密文使用 `sm4:gcm:v1:` 前缀；读取时按密文识别算法。此命令不修改 `ckman.hjson` 中的 `ENC(...)` 值，需要时用 `ckman --encrypt-algorithm SM4 --encrypt '密码'` 生成并替换。
 
-先备份持久层，停止所有 ckman 写入实例，在主配置文件顶层设 `encrypt_algorithm: SM4`，并在配置文件同目录的 `.ckman.env` 中设置 `CKMAN_SM4_KEY`（或为进程设置同名环境变量）。例如 `-c /etc/ckman/conf/ckman.hjson` 对应 `/etc/ckman/conf/.ckman.env`。密钥生成与文件权限设置见[配置总览](/config/overview#密码加密)。ckman 和 ckmanctl 会读取同一个文件，已有的进程环境变量优先。然后执行：
+### 迁移步骤
+
+以下以 **RPM 安装、`local`（SQLite）持久层**为例。其他持久层使用各自数据库的备份方式；多实例部署要停止所有 ckman 写入实例。`local` 的数据库路径默认是 `/etc/ckman/conf/clusters.db`，如改过 `persistent_config.local`，请相应调整备份路径。
+
+1. 确认已安装支持 SM4 的 ckman 和 ckmanctl。在主配置文件顶层设置 `encrypt_algorithm: SM4`，并在配置文件同目录的 `.ckman.env` 中设置现有的 `CKMAN_SM4_KEY`。例如 `/etc/ckman/conf/ckman.hjson` 对应 `/etc/ckman/conf/.ckman.env`。密钥生成、已有密钥格式和文件权限见[配置总览](/config/overview#密码加密)。**已有 SM4 数据时不要重新生成密钥。**
+
+2. 保持服务运行，先演练解密和集群数量；演练不重写集群记录：
 
 ```bash
 ckmanctl upgrade encryption -c /etc/ckman/conf/ckman.hjson --dry-run
+```
+
+3. 演练通过后，先确认备份示例所需的 `python3` 可用，再停止 ckman，备份数据库、主配置和密钥文件。SQLite 可能还有未合并到 `.db` 的 WAL 数据，因此用 SQLite 备份接口生成一致快照，**不要只复制正在使用的 `.db` 文件**：
+
+```bash
+command -v python3
+systemctl stop ckman
+ckman_backup_dir=/var/backups/ckman/sm4-$(date +%Y%m%d%H%M%S)
+install -d -m 700 "$ckman_backup_dir"
+cp -p /etc/ckman/conf/ckman.hjson "$ckman_backup_dir/ckman.hjson"
+cp -p /etc/ckman/conf/.ckman.env "$ckman_backup_dir/.ckman.env"
+python3 - "$ckman_backup_dir/clusters.db" <<'PY'
+import os, sqlite3, sys
+src = sqlite3.connect('file:/etc/ckman/conf/clusters.db?mode=ro', uri=True)
+dst = sqlite3.connect(sys.argv[1])
+src.backup(dst)
+assert dst.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
+dst.close()
+src.close()
+os.chmod(sys.argv[1], 0o600)
+PY
+```
+
+上例假设使用 `.ckman.env`；如果密钥来自 `CKMAN_SM4_KEY_FILE` 或 systemd 环境配置，也要备份相应文件。备份目录应只允许管理员访问。
+
+4. 执行正式迁移。工具先解密所有集群，再在一个持久层事务中重写；任何集群失败会回滚本次写入。它会重写全部集群记录，已经是 SM4 的密文也会重新生成：
+
+```bash
 ckmanctl upgrade encryption -c /etc/ckman/conf/ckman.hjson
 ```
 
-演练会解密并检查所有集群，不会写入。正式运行在一个持久层事务中重写所有集群；任何集群失败则回滚。迁移期间必须停止 ckman 写入，以免并发更新被覆盖。运行完毕后启动 ckman。
+5. 启动服务并验证。再次运行 `--dry-run` 会检查迁移后的密文能否解密；再确认服务可访问，以及集群连接等功能正常：
+
+```bash
+systemctl start ckman
+systemctl is-active ckman
+ckmanctl upgrade encryption -c /etc/ckman/conf/ckman.hjson --dry-run
+curl --noproxy '*' -fsS -o /dev/null http://127.0.0.1:8808/
+```
+
+验收时应确认演练前后的集群数量一致、数据库中的新密文带 `sm4:gcm:v1:` 前缀，并在测试环境对比迁移前后的解密结果及集群连接功能。上述流程验证的是 **CKMAN 自身的 AES → SM4-GCM 迁移**；其他程序生成的 SM4 密文还需要确认工作模式、IV 和密文格式是否兼容。
 
 ## upgrade backup
 
